@@ -1,0 +1,9 @@
+# Ignorer le dossier de build
+build/
+
+# Ignorer les fichiers objets
+*.o
+
+# Ignorer les images de l'OS
+*.bin
+*.iso
