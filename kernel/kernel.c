@@ -88,13 +88,9 @@ void kmain(void) {
 
     // Placeholder pour la structure Multiboot et l'adresse de fin du noyau.
     // Ces valeurs seraient normalement passées par le bootloader (boot.s).
-    uint32_t multiboot_magic = 0x2BADB002; // Supposons que nous avons le bon magic
-    uint32_t multiboot_addr = 0; // Adresse de la structure Multiboot (supposons 0 si non fournie pour ce test simple)
-                                 // Dans un vrai scénario, boot.s mettrait l'adresse de la struct multiboot
-                                 // dans un registre (ex: ebx) et kmain la recevrait.
-    uint32_t kernel_end_addr = 0; // Placeholder, devrait être la fin du .bss du noyau.
-                                  // Un vrai PMM a besoin de ça pour ne pas écraser le noyau avec son bitmap.
-                                  // Pour l'instant, pmm_init a été simplifié.
+    // uint32_t multiboot_magic = 0x2BADB002; // Supposons que nous avons le bon magic (Commenté car non utilisé)
+    // uint32_t multiboot_addr = 0; // Adresse de la structure Multiboot (Commenté car non utilisé)
+    // uint32_t kernel_end_addr = 0; // Placeholder (Commenté car non utilisé)
 
     // Étape 3 : Initialiser la mémoire
     // Taille mémoire arbitraire (ex: 16MB), car nous ne lisons pas encore Multiboot.
