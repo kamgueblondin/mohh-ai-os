@@ -16,9 +16,10 @@ OS_IMAGE = build/ai_os.bin
 # ISO_IMAGE = build/ai_os.iso # ISO not used yet
 
 # Liste des fichiers objets
-OBJECTS = build/boot.o build/idt_loader.o build/isr_stubs.o build/paging.o \
+OBJECTS = build/boot.o build/idt_loader.o build/isr_stubs.o build/paging.o build/context_switch.o \
           build/kernel.o build/idt.o build/interrupts.o build/keyboard.o \
-          build/pmm.o build/vmm.o build/initrd.o
+          build/pmm.o build/vmm.o build/initrd.o \
+          build/task.o build/timer.o
 
 # Cible par défaut : construire l'image de l'OS
 all: $(OS_IMAGE)
@@ -84,6 +85,19 @@ build/paging.o: boot/paging.s
 	@mkdir -p $(dir $@)
 	$(AS) $(ASFLAGS) $< -o $@
 
+build/context_switch.o: boot/context_switch.s
+	@mkdir -p $(dir $@)
+	$(AS) $(ASFLAGS) $< -o $@
+
+# Règles pour les nouveaux fichiers C du noyau
+build/task.o: kernel/task/task.c kernel/task/task.h kernel/mem/pmm.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c kernel/task/task.c -o $@
+
+build/timer.o: kernel/timer.c kernel/timer.h kernel/interrupts.h kernel/task/task.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c kernel/timer.c -o $@
+
 # Cible pour exécuter l'OS dans QEMU
 run: $(OS_IMAGE)
 	# Créer l'initrd s'il n'existe pas
@@ -96,7 +110,7 @@ run: $(OS_IMAGE)
 		echo "my_initrd.tar cree."; \
 	fi
 	# Lancer QEMU avec le noyau ET l'initrd
-	qemu-system-i386 -kernel $(OS_IMAGE) -initrd my_initrd.tar -display curses
+	qemu-system-i386 -kernel $(OS_IMAGE) -initrd my_initrd.tar -nographic -monitor none -serial stdio
 
 # Cible pour nettoyer le projet
 clean:
