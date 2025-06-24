@@ -140,14 +140,5 @@ char* initrd_read_file(const char* filename, uint32_t* file_size_out) {
     return NULL; // Fichier non trouvé
 }
 
-// Implémentation basique de strcmp si non fournie par le noyau
-// Attention: cette version est très basique.
-#ifndef KERNEL_STRCMP_DEFINED
-int strcmp(const char *s1, const char *s2) {
-    while (*s1 && (*s1 == *s2)) {
-        s1++;
-        s2++;
-    }
-    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
-}
-#endif
+// strcmp est déclaré extern et défini dans kernel.c (ou un fichier utilitaire).
+// La garde KERNEL_STRCMP_DEFINED est dans kernel.c.

@@ -28,9 +28,14 @@ int pmm_is_page_used(uint32_t page_num) {
 
 // Initialise le gestionnaire de mémoire physique.
 // memory_size: taille totale de la mémoire en octets.
+// kernel_end_address: adresse de la fin du noyau en mémoire.
+// multiboot_addr: adresse de la structure d'information Multiboot.
 // Pour l'instant, nous ignorerons kernel_end_address et multiboot_addr pour simplifier,
-// comme dans la demande initiale qui ne les utilisait pas encore.
-void pmm_init(uint32_t memory_size) {
+// mais ils sont inclus dans la signature pour cohérence future.
+void pmm_init(uint32_t memory_size, uint32_t kernel_end_address, uint32_t multiboot_addr) {
+    // (void)kernel_end_address; // Pour éviter l'avertissement unused-parameter si non utilisé
+    // (void)multiboot_addr;   // Pour éviter l'avertissement unused-parameter si non utilisé
+
     total_pages = memory_size / PAGE_SIZE;
     used_pages = 0; // On commence avec 0 pages utilisées, puis on marque celles qui le sont.
 

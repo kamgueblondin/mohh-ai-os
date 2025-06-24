@@ -4,6 +4,8 @@
 #include "mem/pmm.h"    // NOUVEAU
 #include "mem/vmm.h"    // NOUVEAU
 #include "fs/initrd.h"  // NOUVEAU
+#include "task/task.h"  // NOUVEAU - Pour le multitâche
+#include "timer.h"      // NOUVEAU - Pour le timer système
 #include <stdint.h>     // Pour uint32_t
 
 // Pointeur vers la mémoire vidéo VGA. L'adresse 0xB8000 est standard.
@@ -66,6 +68,22 @@ void clear_screen(char color) {
     vga_y = 0;
 }
 
+// Fonctions pour les tâches de démonstration du multitâche
+void task_A_function() {
+    while(1) {
+        unsigned short char_a = (unsigned short)'A' | (unsigned short)0x1F << 8;
+        vga_buffer[24 * 80 + 78] = char_a;
+        for (volatile int i = 0; i < 500000; i++);
+    }
+}
+
+void task_B_function() {
+    while(1) {
+        unsigned short char_b = (unsigned short)'B' | (unsigned short)0x1F << 8;
+        vga_buffer[24 * 80 + 79] = char_b;
+        for (volatile int i = 0; i < 500000; i++);
+    }
+}
 
 // La fonction principale de notre noyau
 void kmain(void) {
@@ -100,7 +118,8 @@ void kmain(void) {
     // Taille mémoire arbitraire (ex: 16MB), car nous ne lisons pas encore Multiboot.
     uint32_t total_memory_bytes = 16 * 1024 * 1024;
     // pmm_init(total_memory_bytes, kernel_end_addr, multiboot_addr); // Signature pmm_init modifiée
-    pmm_init(total_memory_bytes); // Utilisation de la version simplifiée de pmm_init demandée initialement
+    // Correction: pmm_init dans pmm.h attend 3 arguments.
+    pmm_init(total_memory_bytes, kernel_end_addr, multiboot_addr);
     vmm_init(); // Active le paging
     print_string("Gestionnaire de memoire initialise.\n", current_color);
 
@@ -145,10 +164,26 @@ void kmain(void) {
     // Initialisation des interruptions (après la mémoire pour que les handlers puissent être en mémoire paginée si besoin)
     idt_init();         // Initialise la table des interruptions
     interrupts_init();  // Initialise le PIC et active les interruptions (sti)
+    // `interrupts_init()` contient `asm volatile("sti")` à la fin.
 
-    print_string("Systeme AI-OS operationnel. En attente d'interruptions...\n", current_color);
+    print_string("Initialisation du multitache...\n", current_color);
+    init_vga_kb(vga_x, vga_y, current_color); // Synchroniser le curseur pour le message
 
-    // Le CPU attendra passivement une interruption au lieu de tourner en boucle
+    tasking_init(); // Initialise le gestionnaire de tâches (crée la tâche noyau/idle)
+
+    // Créer deux nouvelles tâches de démonstration
+    create_task(task_A_function);
+    create_task(task_B_function);
+
+    // Initialise et démarre le timer système (ce qui lancera le scheduling via les IRQ0)
+    // Une fréquence de 100 Hz signifie une interruption toutes les 10 ms.
+    timer_init(100);
+
+    print_string("Systeme AI-OS operationnel avec multitache. En attente d'interruptions...\n", current_color);
+    init_vga_kb(vga_x, vga_y, current_color); // Synchroniser le curseur pour le message
+
+    // Le noyau peut maintenant se mettre en veille ou faire autre chose.
+    // La boucle hlt permet au CPU d'attendre les interruptions sans consommer activement des cycles.
     while(1) {
         asm volatile("hlt");
     }
