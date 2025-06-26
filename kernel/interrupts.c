@@ -1,7 +1,7 @@
 #include "interrupts.h"
 #include "idt.h"        // Pour idt_set_gate, et les extern isrX, irqX
 #include "keyboard.h"   // keyboard_handler_main est appelé par le stub irq1
-#include "timer.h"      // timer_tick est appelé par irq_handler_c pour l'IRQ0
+#include "kernel/timer.h" // Pour timer_tick
 #include "kernel/libc.h" // Pour itoa
 #include <stdint.h>
 

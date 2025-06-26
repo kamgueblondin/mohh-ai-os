@@ -2,6 +2,7 @@
 #define LIBC_H
 
 #include <stddef.h> // For size_t
+#include <stdint.h> // Pour uint32_t et autres types entiers
 
 int strcmp(const char* s1, const char* s2);
 void* memcpy(void* dest, const void* src, size_t n);
