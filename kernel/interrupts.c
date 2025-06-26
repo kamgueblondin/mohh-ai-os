@@ -134,7 +134,7 @@ void irq_handler_c(void* esp_at_call) {
     uint32_t int_num = stack[10]; // Même logique d'offset que pour fault_handler
 
     if (int_num == 32) { // IRQ0 (Timer)
-        timer_tick();
+        timer_handler(); // Appeler le handler principal du timer
     }
     // D'autres IRQs pourraient être gérés ici si nécessaire.
     // Le clavier (IRQ1/INT33) a son propre stub qui appelle keyboard_handler_main.
