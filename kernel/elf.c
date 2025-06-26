@@ -1,9 +1,12 @@
 #include "elf.h"
 #include "mem/pmm.h" // For pmm_alloc_page
-#include "mem/vmm.h" // For vmm_map_page
+#include "mem/vmm.h" // For vmm_map_user_page
 #include <stddef.h>  // For NULL
 #include <stdint.h>  // For uint8_t, uint32_t
-#include "kernel.h" // For print_char, print_string (temporarily for debugging)
+// #include "kernel/kernel.h" // For print_char, print_string (temporarily for debugging)
+// Les fonctions print_string pour le debug dans ce fichier sont commentées.
+// Si elles sont décommentées, il faudra déclarer :
+// extern void print_string(const char* str); ou similaire.
 
 // Basic memory copy function (memcpy)
 // Could be moved to a common string/memory utility header later
@@ -115,8 +118,8 @@ uint32_t elf_load(uint8_t* elf_data) {
                 }
                 // IMPORTANT: vmm_map_page doit être capable de créer les tables de pages si elles n'existent pas
                 // et de définir les flags USER et WRITABLE pour ces pages.
-                // L'implémentation actuelle de vmm_map_page est peut-être trop simple.
-                vmm_map_page((void*)page_v_addr, phys_page);
+                // Utiliser vmm_map_user_page pour s'assurer que les flags sont corrects pour l'espace utilisateur.
+                vmm_map_user_page((void*)page_v_addr, phys_page);
             }
 
             // Copier les données du fichier ELF vers la mémoire virtuelle mappée

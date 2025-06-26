@@ -1,20 +1,26 @@
 #include "interrupts.h"
-#include "idt.h"
-#include "keyboard.h" // For keyboard_handler_main declaration, though irq1 stub calls it directly
+#include "idt.h"        // Pour idt_set_gate, et les extern isrX, irqX
+#include "keyboard.h"   // keyboard_handler_main est appelé par le stub irq1
+#include "timer.h"      // timer_tick est appelé par irq_handler_c pour l'IRQ0
+#include "kernel/libc.h" // Pour itoa
 #include <stdint.h>
 
-// PIC I/O Ports
+// Fonctions/variables globales pour l'affichage (de kernel.c ou vga.c)
+extern void print_string(const char* str, char color);
+extern char current_color;
+extern int vga_x, vga_y;
+extern void print_char(char c, int x, int y, char color);
+
+
+// PIC I/O Ports & Commands (déjà définis dans le fichier original, je les garde)
 #define PIC1            0x20    /* IO base address for master PIC */
 #define PIC2            0xA0    /* IO base address for slave PIC */
 #define PIC1_COMMAND    PIC1
 #define PIC1_DATA       (PIC1+1)
 #define PIC2_COMMAND    PIC2
 #define PIC2_DATA       (PIC2+1)
-
-// PIC Commands
 #define PIC_EOI         0x20    /* End-of-interrupt command code */
 
-// PIC Initialization Control Words
 #define ICW1_ICW4       0x01    /* Indicates that ICW4 will be present */
 #define ICW1_SINGLE     0x02    /* Single (cascade) mode */
 #define ICW1_INTERVAL4  0x04    /* Call address interval 4 (8) */
@@ -43,117 +49,108 @@ uint8_t inb(uint16_t port) {
 
 // Helper function to introduce a small delay for PIC
 void io_wait(void) {
-    // Port 0x80 is typically unused and safe for a short delay
     outb(0x80, 0);
 }
 
-// Remaps the PIC controllers.
-// offset1: vector offset for master PIC (vectors offset1..offset1+7)
-// offset2: vector offset for slave PIC (vectors offset2..offset2+7)
 void pic_remap(int offset1, int offset2) {
     unsigned char a1, a2;
-
-    a1 = inb(PIC1_DATA); // save masks
+    a1 = inb(PIC1_DATA);
     a2 = inb(PIC2_DATA);
-
-    // starts the initialization sequence (in cascade mode)
-    outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);
-    io_wait();
-    outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4);
-    io_wait();
-
-    outb(PIC1_DATA, offset1); // ICW2: Master PIC vector offset
-    io_wait();
-    outb(PIC2_DATA, offset2); // ICW2: Slave PIC vector offset
-    io_wait();
-
-    // ICW3: tell Master PIC that there is a slave PIC at IRQ2 (0000 0100)
-    outb(PIC1_DATA, 4);
-    io_wait();
-    // ICW3: tell Slave PIC its cascade identity (0000 0010)
-    outb(PIC2_DATA, 2);
-    io_wait();
-
-    outb(PIC1_DATA, ICW4_8086); // ICW4: have the PICs use 8086 mode
-    io_wait();
-    outb(PIC2_DATA, ICW4_8086);
-    io_wait();
-
-    // Restore saved masks (or initialize to 0 to unmask all)
-    // For now, let's unmask all interrupts on both PICs after remapping.
-    // The specific IRQs can be masked/unmasked later if needed.
+    outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4); io_wait();
+    outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4); io_wait();
+    outb(PIC1_DATA, offset1); io_wait();
+    outb(PIC2_DATA, offset2); io_wait();
+    outb(PIC1_DATA, 4); io_wait();
+    outb(PIC2_DATA, 2); io_wait();
+    outb(PIC1_DATA, ICW4_8086); io_wait();
+    outb(PIC2_DATA, ICW4_8086); io_wait();
     outb(PIC1_DATA, 0x00); // Unmask all for Master
     outb(PIC2_DATA, 0x00); // Unmask all for Slave
-    // outb(PIC1_DATA, a1); // To restore original masks
-    // outb(PIC2_DATA, a2);
 }
 
+// Handler C pour les exceptions CPU (ISRs 0-31)
+// Appelé par isr_common_stub depuis isr_stubs.s
+// esp_at_call est la valeur de ESP juste avant l'instruction CALL fault_handler dans isr_common_stub
+void fault_handler(void* esp_at_call) {
+    // Sur la pile à partir de esp_at_call:
+    // stack[0] = adresse de retour de call fault_handler (vers isr_common_stub)
+    // stack[1] = ds_val (poussé par 'push eax' où eax contenait ds)
+    // stack[2] = edi (début de PUSHAD)
+    // ...
+    // stack[9] = eax (fin de PUSHAD)
+    // stack[10] = int_num (poussé par la macro ISR_*)
+    // stack[11] = err_code (poussé par CPU ou macro ISR_*)
+    // stack[12] = eip_at_fault (poussé par CPU)
+    // stack[13] = cs_at_fault
+    // stack[14] = eflags_at_fault
+    uint32_t* stack = (uint32_t*)esp_at_call;
+    uint32_t int_num  = stack[10];
+    uint32_t err_code = stack[11];
+    uint32_t eip_fault= stack[12];
 
-// C handler for CPU exceptions (ISRs 0-31)
-// This function will be called from the assembly ISR stubs.
-// For now, it just prints a message. A more robust handler would print registers, error codes etc.
-void fault_handler(struct idt_entry* r) { // The 'r' here is conceptual for what assembly pushes
-                                        // Actual parameters depend on how 'call fault_handler' is set up
-                                        // For now, let's assume the assembly pushes interrupt number and error code
-                                        // and we'll need to fix the signature later if we want to use them.
-    // A simple placeholder. In a real scenario, you'd print interrupt number, error code, registers, etc.
-    // For now, we can't use print_string directly without vga context.
-    // This part needs a proper screen print function accessible globally.
-    // For this step, we'll leave it empty as screen printing from here is complex.
-    // Consider having a global VGA write function if needed for debugging.
+    char buffer[12];
+    char color_err = 0x0C; // Rouge sur fond noir
 
-    // Example of how it might look if we had a global print function:
-    // char* exception_messages[] = { ... };
-    // print_global(exception_messages[r->int_no]); // r->int_no would be passed by assembly
-    // if (r->err_code) print_global_hex(r->err_code);
-    // For now, just hang:
+    if (int_num == 14) { // Page Fault
+        uint32_t faulting_address;
+        asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
+
+        print_string("\n!! PAGE FAULT (14) !!\n", color_err);
+        print_string("Adresse fautive: 0x", color_err);
+        itoa(faulting_address, buffer, 16); print_string(buffer, color_err);
+
+        print_string("\nCode d'erreur: 0x", color_err);
+        itoa(err_code, buffer, 16); print_string(buffer, color_err);
+        print_string(" (", color_err);
+        if (!(err_code & 0x1)) print_string("P", color_err); else print_string("p", color_err); // Present
+        if (err_code & 0x2) print_string("W", color_err); else print_string("r", color_err);    // Write/Read
+        if (err_code & 0x4) print_string("U", color_err); else print_string("s", color_err);    // User/Supervisor
+        if (err_code & 0x8) print_string("R", color_err);                                 // Reserved
+        if (err_code & 0x10) print_string("I", color_err);                                // Instruction Fetch
+        print_string(")\n", color_err);
+
+        print_string("EIP: 0x", color_err);
+        itoa(eip_fault, buffer, 16); print_string(buffer, color_err);
+        print_string("\n", color_err);
+    } else {
+        print_string("\n!! EXCEPTION CPU ", color_err);
+        itoa(int_num, buffer, 10); print_string(buffer, color_err);
+        print_string(" !!\n", color_err);
+        print_string("EIP: 0x", color_err);
+        itoa(eip_fault, buffer, 16); print_string(buffer, color_err);
+        print_string("\nCode d'erreur: 0x", color_err);
+        itoa(err_code, buffer, 16); print_string(buffer, color_err);
+        print_string("\n", color_err);
+    }
+
+    print_string("Systeme arrete.\n", color_err);
     asm volatile("cli; hlt");
 }
 
+// Handler C pour les IRQs (32-47), sauf clavier (IRQ1)
+// Appelé par irq_common_stub depuis isr_stubs.s
+void irq_handler_c(void* esp_at_call) {
+    uint32_t* stack = (uint32_t*)esp_at_call;
+    uint32_t int_num = stack[10]; // Même logique d'offset que pour fault_handler
 
-// C handler for IRQs (32-47), except for keyboard (IRQ1) which has its own path.
-// This function will be called from the assembly IRQ stubs.
-void irq_handler_c(struct idt_entry* r) { // Similar to fault_handler, 'r' is conceptual
-    // Send EOI (End of Interrupt) signal to PICs.
-    // If the IRQ came from the Master PIC (IRQ 0-7, which are int 32-39 after remapping)
-    // send EOI only to Master.
-    // If IRQ came from Slave PIC (IRQ 8-15, int 40-47 after remapping)
-    // send EOI to both Slave and Master.
+    if (int_num == 32) { // IRQ0 (Timer)
+        timer_tick();
+    }
+    // D'autres IRQs pourraient être gérés ici si nécessaire.
+    // Le clavier (IRQ1/INT33) a son propre stub qui appelle keyboard_handler_main.
 
-    // This function would receive the interrupt number.
-    // For now, we assume the assembly stub that calls this *might* pass it.
-    // However, our current stubs don't pass the interrupt number to this C function directly.
-    // The EOI logic is better handled in the assembly stubs for IRQs if they are distinct,
-    // or if this C function knew the IRQ number.
-
-    // For simplicity, the EOI for IRQ1 is in its assembly stub.
-    // For other IRQs, if they call this common handler, EOI needs to be managed here
-    // or in their respective assembly stubs.
-    // The current irq_common_stub in isr_stubs.s doesn't distinguish master/slave EOI.
-    // This needs refinement.
-
-    // Placeholder: if we knew the IRQ number (e.g., passed in 'r' or a global)
-    // uint8_t irq_number = r->int_no - 32; // Convert IDT vector to IRQ number
-    // if (irq_number >= 8) { // IRQ from slave
-    //    outb(PIC2_COMMAND, PIC_EOI);
-    // }
-    // outb(PIC1_COMMAND, PIC_EOI);
-
-    // For now, this common C handler does nothing beyond what the asm stub does.
-    // The EOI for non-keyboard IRQs should be added to their asm stubs or here if info is passed.
+    // Envoyer EOI (End Of Interrupt)
+    if (int_num >= 40) { // IRQ 8-15 (remappé à 40-47) vient de l'esclave
+        outb(PIC2_COMMAND, PIC_EOI);
+    }
+    outb(PIC1_COMMAND, PIC_EOI); // Toujours envoyer au maître
 }
 
-
-// Initializes PICs and IDT entries for IRQs
+// Initialise le PIC et configure les entrées IDT pour les ISRs et IRQs.
 void interrupts_init() {
-    // Remap PIC to avoid conflicts with CPU exceptions.
-    // IRQ 0-7  -> INT 0x20-0x27 (32-39)
-    // IRQ 8-15 -> INT 0x28-0x2F (40-47)
-    pic_remap(0x20, 0x28);
+    pic_remap(0x20, 0x28); // IRQs 0-7 à 0x20-0x27 (32-39), IRQs 8-15 à 0x28-0x2F (40-47)
 
-    // Setup IDT gates for all ISRs (0-31) - CPU exceptions
-    // These point to the assembly stubs defined in isr_stubs.s
-    // Selector 0x08 is the kernel code segment. Flags 0x8E for 32-bit interrupt gate.
+    // Configuration des ISRs (Exceptions CPU)
     idt_set_gate(0, (uint32_t)isr0, 0x08, 0x8E);
     idt_set_gate(1, (uint32_t)isr1, 0x08, 0x8E);
     idt_set_gate(2, (uint32_t)isr2, 0x08, 0x8E);
@@ -168,8 +165,9 @@ void interrupts_init() {
     idt_set_gate(11, (uint32_t)isr11, 0x08, 0x8E);
     idt_set_gate(12, (uint32_t)isr12, 0x08, 0x8E);
     idt_set_gate(13, (uint32_t)isr13, 0x08, 0x8E);
-    idt_set_gate(14, (uint32_t)isr14, 0x08, 0x8E);
+    idt_set_gate(14, (uint32_t)isr14, 0x08, 0x8E); // Page Fault
     idt_set_gate(15, (uint32_t)isr15, 0x08, 0x8E);
+    // ... (autres ISRs jusqu'à 31) ...
     idt_set_gate(16, (uint32_t)isr16, 0x08, 0x8E);
     idt_set_gate(17, (uint32_t)isr17, 0x08, 0x8E);
     idt_set_gate(18, (uint32_t)isr18, 0x08, 0x8E);
@@ -187,24 +185,24 @@ void interrupts_init() {
     idt_set_gate(30, (uint32_t)isr30, 0x08, 0x8E);
     idt_set_gate(31, (uint32_t)isr31, 0x08, 0x8E);
 
-    // Setup IDT gates for PIC IRQs (32-47)
-    idt_set_gate(32, (uint32_t)irq0, 0x08, 0x8E);  // IRQ0  (Timer) -> INT 32
-    idt_set_gate(33, (uint32_t)irq1, 0x08, 0x8E);  // IRQ1  (Keyboard) -> INT 33
-    idt_set_gate(34, (uint32_t)irq2, 0x08, 0x8E);  // IRQ2  (Cascade) -> INT 34
-    idt_set_gate(35, (uint32_t)irq3, 0x08, 0x8E);  // IRQ3  (COM2) -> INT 35
-    idt_set_gate(36, (uint32_t)irq4, 0x08, 0x8E);  // IRQ4  (COM1) -> INT 36
-    idt_set_gate(37, (uint32_t)irq5, 0x08, 0x8E);  // IRQ5  (LPT2) -> INT 37
-    idt_set_gate(38, (uint32_t)irq6, 0x08, 0x8E);  // IRQ6  (Floppy) -> INT 38
-    idt_set_gate(39, (uint32_t)irq7, 0x08, 0x8E);  // IRQ7  (LPT1/Spurious) -> INT 39
-    idt_set_gate(40, (uint32_t)irq8, 0x08, 0x8E);  // IRQ8  (RTC) -> INT 40
-    idt_set_gate(41, (uint32_t)irq9, 0x08, 0x8E);  // IRQ9  (Free) -> INT 41
-    idt_set_gate(42, (uint32_t)irq10, 0x08, 0x8E); // IRQ10 (Free) -> INT 42
-    idt_set_gate(43, (uint32_t)irq11, 0x08, 0x8E); // IRQ11 (Free) -> INT 43
-    idt_set_gate(44, (uint32_t)irq12, 0x08, 0x8E); // IRQ12 (Mouse) -> INT 44
-    idt_set_gate(45, (uint32_t)irq13, 0x08, 0x8E); // IRQ13 (FPU) -> INT 45
-    idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E); // IRQ14 (ATA1) -> INT 46
-    idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E); // IRQ15 (ATA2) -> INT 47
+    // Configuration des IRQs (Hardware Interrupts)
+    idt_set_gate(32, (uint32_t)irq0, 0x08, 0x8E);  // Timer
+    idt_set_gate(33, (uint32_t)irq1, 0x08, 0x8E);  // Clavier
+    idt_set_gate(34, (uint32_t)irq2, 0x08, 0x8E);  // Cascade
+    // ... (autres IRQs jusqu'à 47) ...
+    idt_set_gate(35, (uint32_t)irq3, 0x08, 0x8E);
+    idt_set_gate(36, (uint32_t)irq4, 0x08, 0x8E);
+    idt_set_gate(37, (uint32_t)irq5, 0x08, 0x8E);
+    idt_set_gate(38, (uint32_t)irq6, 0x08, 0x8E);
+    idt_set_gate(39, (uint32_t)irq7, 0x08, 0x8E);
+    idt_set_gate(40, (uint32_t)irq8, 0x08, 0x8E);
+    idt_set_gate(41, (uint32_t)irq9, 0x08, 0x8E);
+    idt_set_gate(42, (uint32_t)irq10, 0x08, 0x8E);
+    idt_set_gate(43, (uint32_t)irq11, 0x08, 0x8E);
+    idt_set_gate(44, (uint32_t)irq12, 0x08, 0x8E);
+    idt_set_gate(45, (uint32_t)irq13, 0x08, 0x8E);
+    idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
+    idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
 
-    // Enable interrupts on the CPU
-    asm volatile ("sti");
+    asm volatile ("sti"); // Activer les interruptions globalement
 }
