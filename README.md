@@ -66,7 +66,7 @@ C'est l'environnement de développement natif pour ce projet.
 
 1.  **Cloner le dépôt :**
     ```bash
-    git clone https://github.com/VOTRE_NOM/mohh-ai-os.git
+    git clone https://github.com/kamgueblondin/mohh-ai-os.git
     cd mohh-ai-os
     ```
 2.  **Installer les dépendances :**
