@@ -1,4 +1,5 @@
 #include "libc.h"
+#include <stdint.h> // Ajout redondant pour s'assurer de la définition de uint32_t
 
 int strcmp(const char* s1, const char* s2) {
     while (*s1 && (*s1 == *s2)) {
