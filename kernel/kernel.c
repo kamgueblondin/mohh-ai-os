@@ -1,12 +1,14 @@
 #include "idt.h"
 #include "interrupts.h"
 #include "keyboard.h"
-#include "mem/pmm.h"    // NOUVEAU
-#include "mem/vmm.h"    // NOUVEAU
-#include "fs/initrd.h"  // NOUVEAU
-#include "task/task.h"  // NOUVEAU - Pour le multitâche
-#include "timer.h"      // NOUVEAU - Pour le timer système
-#include <stdint.h>     // Pour uint32_t
+#include "mem/pmm.h"
+#include "mem/vmm.h"
+#include "fs/initrd.h"
+#include "task/task.h"
+#include "timer.h"
+#include "syscall/syscall.h" // Pour syscall_init()
+#include "libc.h"            // Pour strcmp (si besoin ici, sinon implicite via autres .h)
+#include <stdint.h>
 
 // Pointeur vers la mémoire vidéo VGA. L'adresse 0xB8000 est standard.
 volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
@@ -68,136 +70,79 @@ void clear_screen(char color) {
     vga_y = 0;
 }
 
-// Fonctions pour les tâches de démonstration du multitâche
-void task_A_function() {
-    while(1) {
-        unsigned short char_a = (unsigned short)'A' | (unsigned short)0x1F << 8;
-        vga_buffer[24 * 80 + 78] = char_a;
-        for (volatile int i = 0; i < 500000; i++);
-    }
-}
-
-void task_B_function() {
-    while(1) {
-        unsigned short char_b = (unsigned short)'B' | (unsigned short)0x1F << 8;
-        vga_buffer[24 * 80 + 79] = char_b;
-        for (volatile int i = 0; i < 500000; i++);
-    }
-}
-
 // La fonction principale de notre noyau
 void kmain(void) {
-    // Couleur : texte blanc (0xF) sur fond bleu (0x1) -> 0x1F
-    current_color = 0x1F;
-
+    current_color = 0x1F; // Texte blanc sur fond bleu
     clear_screen(current_color);
+    print_string("AI-OS Demarrage...\n", current_color);
 
-    // Initialize VGA for keyboard.c if its separate VGA variables are used
-    // This syncs the cursor position and color.
-    // init_vga_kb(vga_x, vga_y, current_color); // Defined in keyboard.c
-
-    print_string("Bienvenue dans AI-OS !\nEntrez du texte :\n", current_color);
-    // After printing, the vga_x, vga_y in this file are updated.
-    // We need to ensure keyboard.c uses these, or we pass them.
-    // The current keyboard.c has its own vga_x_kb etc.
-    // For them to match, we can call init_vga_kb again.
-    // This is still a hack due to duplicated VGA logic.
-    init_vga_kb(vga_x, vga_y, current_color);
+    // Initialisation basique du curseur pour keyboard.c (si nécessaire)
+    // Idéalement, keyboard.c utilise les globales vga_x, vga_y, current_color directement.
+    // init_vga_kb(vga_x, vga_y, current_color); // Supprimé car keyboard.c a été modifié
 
     // Placeholder pour la structure Multiboot et l'adresse de fin du noyau.
-    // Ces valeurs seraient normalement passées par le bootloader (boot.s).
-    uint32_t multiboot_magic = 0x2BADB002; // Supposons que nous avons le bon magic
-    uint32_t multiboot_addr = 0; // Adresse de la structure Multiboot (supposons 0 si non fournie pour ce test simple)
-                                 // Dans un vrai scénario, boot.s mettrait l'adresse de la struct multiboot
-                                 // dans un registre (ex: ebx) et kmain la recevrait.
-    uint32_t kernel_end_addr = 0; // Placeholder, devrait être la fin du .bss du noyau.
-                                  // Un vrai PMM a besoin de ça pour ne pas écraser le noyau avec son bitmap.
-                                  // Pour l'instant, pmm_init a été simplifié.
+    uint32_t multiboot_magic = 0x2BADB002;
+    uint32_t multiboot_addr = 0;
+    uint32_t kernel_end_addr = 0; // TODO: Obtenir cette valeur depuis le linker script
 
-    // Étape 3 : Initialiser la mémoire
-    // Taille mémoire arbitraire (ex: 16MB), car nous ne lisons pas encore Multiboot.
-    uint32_t total_memory_bytes = 16 * 1024 * 1024;
-    // pmm_init(total_memory_bytes, kernel_end_addr, multiboot_addr); // Signature pmm_init modifiée
-    // Correction: pmm_init dans pmm.h attend 3 arguments.
+    // Initialiser la mémoire physique et virtuelle
+    uint32_t total_memory_bytes = 16 * 1024 * 1024; // Supposition pour l'instant
     pmm_init(total_memory_bytes, kernel_end_addr, multiboot_addr);
     vmm_init(); // Active le paging
-    print_string("Gestionnaire de memoire initialise.\n", current_color);
+    print_string("Gestionnaires PMM et VMM initialises.\n", current_color);
 
-    // Étape 4 : Initialiser l'initrd
-    // Adresse arbitraire pour l'initrd. Dans un vrai système, cette info viendrait de Multiboot.
-    // QEMU avec `-initrd` charge le fichier, le bootloader (GRUB ou le nôtre) fournirait l'adresse.
-    // Assurons-nous que cette adresse est mappée après vmm_init().
-    // Les 4 premiers Mo sont mappés en identité. Choisissons une adresse dans cette plage,
-    // par exemple 2MB (0x200000), en s'assurant qu'elle n'écrase pas le noyau ou le bitmap PMM (à 0x10000).
-    uint32_t initrd_location = 0x200000; // ADRESSE PROVISOIRE POUR L'INITRD
-
-    // Simuler la recherche de l'initrd via Multiboot (sera implémenté plus tard)
-    // uint32_t initrd_location = find_initrd_location_from_multiboot(multiboot_addr);
-    if (initrd_location != 0) { // Simule la trouvaille d'un initrd (et multiboot_magic ==EXPECTED_MAGIC)
-        print_string("Initrd trouve ! Fichiers:\n", current_color);
+    // Initialiser l'initrd
+    // TODO: Obtenir initrd_location depuis Multiboot
+    uint32_t initrd_location = 0x200000; // Adresse codée en dur pour l'instant
+    if (initrd_location != 0) {
         initrd_init(initrd_location);
-        initrd_list_files();
-
-        // Test de lecture de fichier (optionnel)
-        /*
-        uint32_t test_file_size = 0;
-        char* test_content = initrd_read_file("./test.txt", &test_file_size);
-        if (test_content) {
-            print_string("Contenu de ./test.txt (taille: ", current_color);
-            // char size_str[10]; itoa(test_file_size, size_str, 10); print_string(size_str, current_color);
-            print_string("):\n", current_color);
-            // Attention: test_content n'est pas NUL-terminé par initrd_read_file tel quel.
-            // Il faudrait soit le copier et ajouter NUL, soit l'afficher char par char jusqu'à test_file_size.
-            for(uint32_t k=0; k < test_file_size && k < 70; ++k) { // Limiter l'affichage
-                 print_char(test_content[k], vga_x, vga_y, current_color);
-            }
-            print_string("\n", current_color);
-        } else {
-            print_string("Impossible de lire ./test.txt depuis initrd.\n", current_color);
-        }
-        */
-
+        print_string("Initrd initialise. Contenu:\n", current_color);
+        initrd_list_files(); // Optionnel: lister les fichiers pour le debug
     } else {
-        print_string("Initrd non trouve.\n", current_color);
+        print_string("Initrd non trouve. Arret.\n", 0x0C);
+        while(1) asm volatile("cli; hlt");
     }
 
-    // Initialisation des interruptions (après la mémoire pour que les handlers puissent être en mémoire paginée si besoin)
-    idt_init();         // Initialise la table des interruptions
-    interrupts_init();  // Initialise le PIC et active les interruptions (sti)
-    // `interrupts_init()` contient `asm volatile("sti")` à la fin.
+    // Initialiser les interruptions et les appels système
+    idt_init();
+    interrupts_init();  // Configure le PIC, active les IRQ de base
+    syscall_init();     // Enregistre le handler pour int 0x80
+    print_string("IDT, PIC et Syscalls initialises.\n", current_color);
 
-    print_string("Initialisation du multitache...\n", current_color);
-    init_vga_kb(vga_x, vga_y, current_color); // Synchroniser le curseur pour le message
+    // Initialiser le multitâche
+    tasking_init(); // Crée la tâche noyau initiale (idle task)
+    print_string("Multitache initialise.\n", current_color);
 
-    tasking_init(); // Initialise le gestionnaire de tâches (crée la tâche noyau/idle)
+    // Lancer le shell utilisateur
+    print_string("Lancement du shell...\n", current_color);
+    char* shell_argv[] = {"shell.bin", NULL}; // argv pour le shell
+    int shell_pid = create_user_process("shell.bin", shell_argv);
 
-    // Créer deux nouvelles tâches de démonstration
-    create_task(task_A_function);
-    create_task(task_B_function);
+    if (shell_pid < 0) {
+        print_string("Echec du lancement de shell.bin. Arret.\n", 0x0C);
+        while(1) asm volatile("cli; hlt");
+    } else {
+        print_string("shell.bin lance avec PID: ", current_color);
+        // TODO: Fonction itoa pour afficher shell_pid
+        print_string("[PID affichage non implemente]\n", current_color);
+    }
 
-    // Initialise et démarre le timer système (ce qui lancera le scheduling via les IRQ0)
-    // Une fréquence de 100 Hz signifie une interruption toutes les 10 ms.
-    timer_init(100);
+    // Initialiser et démarrer le timer système pour permettre le scheduling
+    timer_init(100); // 100 Hz
+    print_string("Timer systeme active a 100Hz.\n", current_color);
 
-    print_string("Systeme AI-OS operationnel avec multitache. En attente d'interruptions...\n", current_color);
-    init_vga_kb(vga_x, vga_y, current_color); // Synchroniser le curseur pour le message
+    // Activer les interruptions globalement (si ce n'est pas déjà fait dans timer_init ou interrupts_init)
+    // `interrupts_init` devrait déjà avoir fait `sti`.
+    // `timer_init` démarre les IRQ0 qui déclencheront le scheduler.
 
-    // Le noyau peut maintenant se mettre en veille ou faire autre chose.
-    // La boucle hlt permet au CPU d'attendre les interruptions sans consommer activement des cycles.
+    print_string("Systeme AI-OS operationnel. Passage au mode idle.\n", current_color);
+
+    // La tâche noyau initiale (kmain) devient la tâche "idle".
+    // Elle ne fait rien d'autre qu'attendre les interruptions.
     while(1) {
         asm volatile("hlt");
     }
 }
 
-// Définition de strcmp si KERNEL_STRCMP_DEFINED n'est pas activé dans initrd.c
-// Il est préférable de l'avoir en un seul endroit, par exemple un util.c
-#ifndef KERNEL_STRCMP_DEFINED
-#define KERNEL_STRCMP_DEFINED
-int strcmp(const char *s1, const char *s2) {
-    while (*s1 && (*s1 == *s2)) {
-        s1++;
-        s2++;
-    }
-    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
-}
-#endif
+// La définition de strcmp est maintenant dans kernel/libc.c
+// et devrait être liée automatiquement.

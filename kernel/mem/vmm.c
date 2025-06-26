@@ -55,25 +55,72 @@ void vmm_init() {
     // Toutes les adresses sont des adresses virtuelles.
 }
 
-// Mappe une page virtuelle à une page physique.
-// Pour l'instant, cette fonction est un stub et ne fait rien.
-// Une implémentation complète nécessiterait de:
-// 1. Trouver l'entrée du Page Directory correspondant à virtual_addr.
-// 2. Si l'entrée du PD n'existe pas ou ne pointe pas vers une Page Table valide,
-//    allouer une nouvelle Page Table (avec pmm_alloc_page), l'initialiser,
-//    et mettre à jour l'entrée du PD.
-// 3. Trouver l'entrée de la Page Table correspondant à virtual_addr.
-// 4. Mettre l'adresse physical_addr et les flags dans cette entrée de PT.
-// 5. Invalider la TLB pour cette adresse virtuelle (asm volatile("invlpg (%0)" ::"r" (virtual_addr) : "memory");)
-void vmm_map_page(void* virtual_addr, void* physical_addr) {
-    (void)virtual_addr; // Supprimer les avertissements de variable non utilisée
-    (void)physical_addr;
-    // TODO: Implémenter la logique de mappage.
-    // Exemple simplifié pour une adresse dans les 4 premiers Mo (déjà mappés)
-    // uint32_t pd_index = (uint32_t)virtual_addr >> 22;
-    // uint32_t pt_index = ((uint32_t)virtual_addr >> 12) & 0x03FF;
-    //
-    // uint32_t* page_table_entry_addr = (uint32_t*)( (kernel_page_directory[pd_index] & ~0xFFF) + (pt_index * 4) );
-    // *page_table_entry_addr = ((uint32_t)physical_addr) | PAGE_PRESENT | PAGE_READ_WRITE;
-    // asm volatile("invlpg (%0)" ::"r" (virtual_addr) : "memory");
+// Mappe une page virtuelle à une page physique avec les flags donnés.
+// Pour l'instant, cela fonctionne sur le kernel_page_directory global.
+void vmm_map_page(void* virtual_addr, void* physical_addr, uint32_t flags) {
+    uint32_t virt_addr_val = (uint32_t)virtual_addr;
+    uint32_t pd_index = virt_addr_val >> 22; // Index dans le Page Directory
+    uint32_t pt_index = (virt_addr_val >> 12) & 0x03FF; // Index dans la Page Table
+
+    // Vérifier si l'entrée du Page Directory pour cette table de pages existe
+    uint32_t pde = kernel_page_directory[pd_index];
+    uint32_t* page_table_virt_addr;
+
+    if (!(pde & PAGE_PRESENT)) {
+        // La table de pages n'existe pas, il faut l'allouer
+        void* new_pt_phys_addr = pmm_alloc_page();
+        if (!new_pt_phys_addr) {
+            // Échec de l'allocation de la table de pages, que faire ? Paniquer ?
+            // print_string("Failed to allocate page table!\n", 0x0C);
+            return;
+        }
+        // Initialiser la nouvelle table de pages à zéro (toutes les entrées non présentes)
+        // L'adresse physique est retournée par pmm_alloc_page.
+        // Pour y accéder (écrire), nous avons besoin d'une adresse virtuelle.
+        // Pour l'instant, on suppose un mappage identité pour le noyau ou un accès direct.
+        // Si le noyau est mappé haut (par exemple), il faut une astuce pour accéder à new_pt_phys_addr.
+        // Supposons que new_pt_phys_addr est accessible directement pour l'écriture.
+        // Ou, si le paging est déjà actif et que les adresses physiques ne sont pas directement mappées,
+        // il faudrait temporairement mapper cette page physique pour l'initialiser.
+        // Pour la simplicité (et parce que les 4 premiers Mo sont mappés 1:1),
+        // on suppose qu'on peut écrire à l'adresse physique si elle est < 4MB.
+        // Une solution plus robuste serait d'avoir une zone de mappage temporaire.
+        page_table_virt_addr = (uint32_t*)new_pt_phys_addr; // ATTENTION: Ceci est une simplification.
+                                                            // Si new_pt_phys_addr > VMM_KERNEL_MAX_PHYS_MAPPED_ADDR,
+                                                            // il faut le mapper temporairement.
+                                                            // Pour l'instant, on suppose que pmm_alloc_page() retourne des adresses < 4MB
+                                                            // ou que le noyau a un moyen d'accéder à toute la RAM physique.
+
+        for (int i = 0; i < 1024; i++) {
+            page_table_virt_addr[i] = 0; // Marquer toutes les entrées comme non présentes initialement.
+                                         // Ou avec PAGE_READ_WRITE pour simplifier les flags futurs.
+        }
+
+        // Mettre à jour l'entrée du Page Directory
+        // PAGE_USER_SUPERVISOR pour la PDE doit permettre l'accès utilisateur si les PTE le permettent.
+        kernel_page_directory[pd_index] = (uint32_t)new_pt_phys_addr | PAGE_PRESENT | PAGE_READ_WRITE | PAGE_USER_SUPERVISOR;
+    } else {
+        // La table de pages existe déjà. Récupérer son adresse virtuelle.
+        // L'adresse dans la PDE est physique.
+        // Encore une fois, simplification pour l'accès.
+        page_table_virt_addr = (uint32_t*)(pde & ~0xFFF); // Masquer les flags pour obtenir l'adresse physique de la PT
+                                                          // et la traiter comme virtuelle (simplification)
+    }
+
+    // Mettre à jour l'entrée de la Page Table
+    page_table_virt_addr[pt_index] = ((uint32_t)physical_addr & ~0xFFF) | flags;
+
+    // Invalider l'entrée TLB pour cette adresse virtuelle
+    // car le mappage a peut-être changé.
+    asm volatile("invlpg (%0)" ::"r" (virtual_addr) : "memory");
+}
+
+// Wrapper pour vmm_map_page qui utilise les flags par défaut pour le noyau (Kernel R/W)
+void vmm_map_kernel_page(void* virtual_addr, void* physical_addr) {
+    vmm_map_page(virtual_addr, physical_addr, PAGE_PRESENT | PAGE_READ_WRITE);
+}
+
+// Wrapper pour vmm_map_page qui utilise les flags par défaut pour l'utilisateur (User R/W)
+void vmm_map_user_page(void* virtual_addr, void* physical_addr) {
+    vmm_map_page(virtual_addr, physical_addr, PAGE_PRESENT | PAGE_READ_WRITE | PAGE_USER_SUPERVISOR);
 }
