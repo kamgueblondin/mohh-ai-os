@@ -201,3 +201,6 @@ syscall_interrupt_handler_asm:
                           ; *stacked_eax = return_value;
 
     iret                  ; Retourne à l'espace utilisateur. Pop CS, EIP, EFLAGS, SS, ESP.
+
+SECTION .note.GNU-stack
+    ; Cette section indique au linker que la pile ne doit pas être exécutable.

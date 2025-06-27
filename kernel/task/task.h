@@ -4,10 +4,25 @@
 #include <stdint.h>
 
 // Structure pour sauvegarder l'état du CPU
+// L'ordre des champs est important pour context_switch et iret.
+// Les registres généraux sont typiquement sauvegardés par PUSHAD/POPAD.
+// Les segments et eip/eflags/esp_user sont pour la frame IRET.
 typedef struct cpu_state {
-    uint32_t eax, ebx, ecx, edx;
-    uint32_t esi, edi, ebp;
-    uint32_t eip, esp, eflags;
+    // Registres sauvegardés par PUSHAD (dans l'ordre inverse de PUSHAD pour faciliter la lecture)
+    uint32_t edi, esi, ebp, esp_dummy; // esp_dummy est une placeholder, le vrai esp est géré par esp_kernel
+    uint32_t ebx, edx, ecx, eax;
+
+    // Registres de segment (pour le mode utilisateur, ou si la tâche noyau utilise des segments différents)
+    uint32_t gs, fs, es, ds; // cs et ss sont gérés plus spécifiquement pour iret
+
+    // Pour iret (et le saut initial via ret pour les tâches noyau)
+    uint32_t eip;       // Instruction pointer
+    uint32_t cs;        // Code segment for iret
+    uint32_t eflags;    // Flags register
+
+    // Uniquement pour iret vers un niveau de privilège différent (ex: noyau vers utilisateur)
+    uint32_t esp_user;  // User mode stack pointer (si CPL change)
+    uint32_t ss_user;   // User mode stack segment (si CPL change)
 } cpu_state_t;
 
 // Énumération pour l'état de la tâche
@@ -35,6 +50,10 @@ typedef struct task {
     // Ces champs pourraient être dans une structure séparée si task_t devient trop gros.
     int argc;
     char** argv_user_stack_ptr; // Pointeur vers argv sur la pile de l'utilisateur
+
+    // Gestion de la pile noyau
+    uint32_t esp_kernel;        // Pointeur vers le sommet de la pile noyau sauvegardée
+    uint32_t kernel_stack_top;  // Adresse de base (sommet initial) de la pile noyau allouée
 
     // Plus tard: page_directory_t* page_directory; // Propre à chaque tâche
 } task_t;
