@@ -13,7 +13,7 @@ ASFLAGS = -f elf32
 
 # Nom du fichier final de notre OS
 OS_IMAGE = build/ai_os.bin
-# ISO_IMAGE = build/ai_os.iso # ISO not used yet
+ISO_IMAGE = release/mohh-ai-os.iso
 
 # Liste des fichiers objets
 OBJECTS = build/boot.o build/idt_loader.o build/isr_stubs.o build/paging.o build/context_switch.o \
@@ -127,7 +127,22 @@ run: $(OS_IMAGE) initrd
 
 # Cible pour nettoyer le projet
 clean:
-	rm -rf build my_initrd.tar
+	rm -rf build my_initrd.tar release iso_root
 	$(MAKE) -C userspace clean
 
-.PHONY: all run clean userspace_build initrd
+# Cible pour créer l'image ISO bootable
+iso: $(OS_IMAGE)
+	@echo "Création de l'image ISO bootable..."
+	@mkdir -p iso_root/boot/grub
+	@cp $(OS_IMAGE) iso_root/boot/os.bin
+	@echo 'set timeout=0' > iso_root/boot/grub/grub.cfg
+	@echo 'set default=0' >> iso_root/boot/grub/grub.cfg
+	@echo '' >> iso_root/boot/grub/grub.cfg
+	@echo 'menuentry "mohh-ai-os" {' >> iso_root/boot/grub/grub.cfg
+	@echo '  multiboot /boot/os.bin' >> iso_root/boot/grub/grub.cfg
+	@echo '}' >> iso_root/boot/grub/grub.cfg
+	@mkdir -p $(dir $(ISO_IMAGE))
+	grub-mkrescue -o $(ISO_IMAGE) iso_root -- -volid "MOHH_AI_OS"
+	@echo "$(ISO_IMAGE) créé."
+
+.PHONY: all run clean userspace_build initrd iso
