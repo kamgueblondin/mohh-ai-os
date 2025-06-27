@@ -70,9 +70,18 @@ void vmm_map_page(void* virtual_addr, void* physical_addr, uint32_t flags) {
         // La table de pages n'existe pas, il faut l'allouer
         void* new_pt_phys_addr = pmm_alloc_page();
         if (!new_pt_phys_addr) {
-            // Échec de l'allocation de la table de pages, que faire ? Paniquer ?
-            // print_string("Failed to allocate page table!\n", 0x0C);
-            return;
+            // Échec de l'allocation de la table de pages. C'est critique.
+            // On ne peut pas continuer car on ne peut pas mapper la mémoire demandée.
+            // Pour l'instant, on va imprimer un message et boucler indéfiniment.
+            // Une vraie gestion d'erreur pourrait tenter de libérer de la mémoire ou afficher un "kernel panic".
+            // extern void print_string(const char* str, char color); // Assurez-vous que c'est disponible
+            // print_string("VMM Error: Failed to allocate physical page for new page table. System Halted.\n", 0x0C);
+            // TODO: Need a kpanic function here.
+            volatile unsigned short* vga = (unsigned short*)0xB8000;
+            const char* error_msg = "VMM PMM PT ALLOC FAIL";
+            for(int k=0; error_msg[k] != '\0'; ++k) vga[k] = (vga[k] & 0xFF00) | error_msg[k];
+            asm volatile("cli; hlt");
+            return; // Ne devrait pas être atteint
         }
         // Initialiser la nouvelle table de pages à zéro (toutes les entrées non présentes)
         // L'adresse physique est retournée par pmm_alloc_page.

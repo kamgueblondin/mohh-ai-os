@@ -70,60 +70,111 @@ void pic_remap(int offset1, int offset2) {
 
 // Handler C pour les exceptions CPU (ISRs 0-31)
 // Appelé par isr_common_stub depuis isr_stubs.s
-// esp_at_call est la valeur de ESP juste avant l'instruction CALL fault_handler dans isr_common_stub
 void fault_handler(void* esp_at_call) {
-    // Sur la pile à partir de esp_at_call:
-    // stack[0] = adresse de retour de call fault_handler (vers isr_common_stub)
-    // stack[1] = ds_val (poussé par 'push eax' où eax contenait ds)
-    // stack[2] = edi (début de PUSHAD)
+    // Stack layout from isr_stubs.s:
+    // esp_at_call points to where 'call fault_handler' return address would be if it wasn't a pointer.
+    // Actual stack arguments start after this.
+    // PUSHAD order: EDI, ESI, EBP, ESP_dummy, EBX, EDX, ECX, EAX
+    // Stack before `call fault_handler` from `isr_common_stub`:
+    // [ESP from stub]   -> ds_val (pushed by stub)
+    // [ESP from stub +4]  -> EDI (from PUSHAD)
     // ...
-    // stack[9] = eax (fin de PUSHAD)
-    // stack[10] = int_num (poussé par la macro ISR_*)
-    // stack[11] = err_code (poussé par CPU ou macro ISR_*)
-    // stack[12] = eip_at_fault (poussé par CPU)
-    // stack[13] = cs_at_fault
-    // stack[14] = eflags_at_fault
-    uint32_t* stack = (uint32_t*)esp_at_call;
-    uint32_t int_num  = stack[10];
-    uint32_t err_code = stack[11];
-    uint32_t eip_fault= stack[12];
+    // [ESP from stub +4+28] -> EAX (from PUSHAD)
+    // [ESP from stub +4+32] -> int_num (pushed by macro)
+    // [ESP from stub +4+36] -> err_code (pushed by CPU or macro)
+    // [ESP from stub +4+40] -> EIP_at_fault (pushed by CPU)
+    // [ESP from stub +4+44] -> CS_at_fault (pushed by CPU)
+    // [ESP from stub +4+48] -> EFLAGS_at_fault (pushed by CPU)
+    // The argument `esp_at_call` is ESP *within* `isr_common_stub` just before `call fault_handler`.
+    // So, if isr_common_stub did:
+    //   pusha
+    //   push ds_val_in_eax
+    //   call fault_handler  <-- esp_at_call is effectively [esp+4] from the C perspective if using argument passing
+    //                         However, the stub does not push 'esp' to pass to 'fault_handler'.
+    //                         The 'esp_at_call' is the C function's view of its own stack frame base,
+    //                         and the actual parameters are relative to the original ESP when the stub was entered.
+    // Let's re-verify stack layout in isr_stubs.s:
+    // isr_common_stub:
+    //   pusha              ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax (edi lowest addr, eax highest of this block)
+    //   mov ax, ds
+    //   push eax           ; save the data segment descriptor
+    //   mov ax, 0x10       ; load the kernel data segment descriptor
+    //   ...
+    //   call fault_handler ; C function sees arguments pushed *by the caller* (CPU or macros)
+    //                      ; The actual registers are on the stack *before* this call was made.
+    //                      ; The parameters int_num, err_code, eip, cs, eflags are pushed by CPU/macros *before* isr_common_stub
+    //                      ; Then isr_common_stub pushes dummy error_code, int_num (again, for its own logic)
+    //                      ; This is confusing. Let's assume the indices [10], [11], [12] used before were correct
+    //                      ; relative to the 'esp' value *after* all items were pushed by CPU and stubs.
 
-    char buffer[12];
-    char color_err = 0x0C; // Rouge sur fond noir
+    uint32_t* stack_from_stub_perspective = (uint32_t*)((char*)esp_at_call + 4); // Approximate adjustment if esp_at_call is [ebp+8] for first C arg
+
+    // Simpler interpretation: The `esp_at_call` is the `esp` right after `push eax` (ds_val) in the stub.
+    // So:
+    // esp_at_call[0] = ds_val
+    // esp_at_call[1] = edi
+    // ...
+    // esp_at_call[8] = eax_val
+    // esp_at_call[9] = int_num (pushed by macro ISR_NOERRCODE/ERRCODE before jmp isr_common_stub)
+    // esp_at_call[10] = err_code (pushed by CPU or macro before jmp isr_common_stub)
+    // esp_at_call[11] = eip_fault
+    // This seems more plausible with the original indexing [10], [11], [12] for int_num, err_code, eip.
+    // Let's stick to the original interpretation of stack indices [10], [11], [12] relative to
+    // the base of the "interrupt frame" passed implicitly to fault_handler.
+
+    uint32_t int_num  = ((uint32_t*)esp_at_call)[10]; // int_num pushed by our ISR_ macro
+    // uint32_t err_code = ((uint32_t*)esp_at_call)[11]; // err_code pushed by CPU or our macro
+    // uint32_t eip_fault= ((uint32_t*)esp_at_call)[12]; // eip pushed by CPU
+
+    volatile unsigned short* vga = (unsigned short*)0xB8000;
+    char id_char = ' ';
+
+    // Clear a portion of the screen first to make messages visible
+    for (int i = 0; i < 80 * 2; ++i) { // Clear top 2 lines
+        vga[i] = (unsigned short)' ' | (0x0F << 8); // White on Black
+    }
+    vga_x = 0; vga_y = 0; // Reset internal cursor for print_char if it were used
 
     if (int_num == 14) { // Page Fault
+        id_char = 'P';
         uint32_t faulting_address;
         asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
 
-        print_string("\n!! PAGE FAULT (14) !!\n", color_err);
-        print_string("Adresse fautive: 0x", color_err);
-        itoa(faulting_address, buffer, 16); print_string(buffer, color_err);
+        vga[0] = (unsigned short)id_char | (0x0C << 8); // Red on Black for 'P'
+        vga[1] = (unsigned short)'F' | (0x0C << 8);
 
-        print_string("\nCode d'erreur: 0x", color_err);
-        itoa(err_code, buffer, 16); print_string(buffer, color_err);
-        print_string(" (", color_err);
-        if (!(err_code & 0x1)) print_string("P", color_err); else print_string("p", color_err); // Present
-        if (err_code & 0x2) print_string("W", color_err); else print_string("r", color_err);    // Write/Read
-        if (err_code & 0x4) print_string("U", color_err); else print_string("s", color_err);    // User/Supervisor
-        if (err_code & 0x8) print_string("R", color_err);                                 // Reserved
-        if (err_code & 0x10) print_string("I", color_err);                                // Instruction Fetch
-        print_string(")\n", color_err);
+        // Display faulting_address (CR2)
+        // Example: "CR2=0x12345678" at line 1
+        vga[80*1 + 0] = 'C'; vga[80*1 + 1] = 'R'; vga[80*1 + 2] = '2'; vga[80*1 + 3] = '='; vga[80*1 + 4] = '0'; vga[80*1 + 5] = 'x';
+        for (int i = 0; i < 8; i++) {
+            char hexdigit = (faulting_address >> ((7-i)*4)) & 0xF;
+            if (hexdigit < 10) hexdigit += '0';
+            else hexdigit += 'A' - 10;
+            vga[80*1 + 6 + i] = (unsigned short)hexdigit | (0x0C << 8);
+        }
+         // Display EIP that caused the fault
+        uint32_t eip_val = ((uint32_t*)esp_at_call)[12];
+        vga[80*0 + 10] = 'E'; vga[80*0 + 11] = 'I'; vga[80*0 + 12] = 'P'; vga[80*0 + 13] = '=';
+        for (int i = 0; i < 8; i++) {
+            char hexdigit = (eip_val >> ((7-i)*4)) & 0xF;
+            if (hexdigit < 10) hexdigit += '0';
+            else hexdigit += 'A' - 10;
+            vga[80*0 + 14 + i] = (unsigned short)hexdigit | (0x0C << 8);
+        }
 
-        print_string("EIP: 0x", color_err);
-        itoa(eip_fault, buffer, 16); print_string(buffer, color_err);
-        print_string("\n", color_err);
-    } else {
-        print_string("\n!! EXCEPTION CPU ", color_err);
-        itoa(int_num, buffer, 10); print_string(buffer, color_err);
-        print_string(" !!\n", color_err);
-        print_string("EIP: 0x", color_err);
-        itoa(eip_fault, buffer, 16); print_string(buffer, color_err);
-        print_string("\nCode d'erreur: 0x", color_err);
-        itoa(err_code, buffer, 16); print_string(buffer, color_err);
-        print_string("\n", color_err);
+
+    } else if (int_num == 8) { // Double Fault
+        id_char = 'D';
+        vga[0] = (unsigned short)id_char | (0x0C << 8);
+        vga[1] = (unsigned short)'F' | (0x0C << 8);
+         //uint32_t err_code_df = ((uint32_t*)esp_at_call)[11]; // DF error code is often 0
+    } else { // Other exceptions
+        id_char = 'E';
+        vga[0] = (unsigned short)id_char | (0x0C << 8);
+        vga[1] = (unsigned short)('0' + (int_num / 10)) | (0x0C << 8);
+        vga[2] = (unsigned short)('0' + (int_num % 10)) | (0x0C << 8);
     }
 
-    print_string("Systeme arrete.\n", color_err);
     asm volatile("cli; hlt");
 }
 
