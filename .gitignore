@@ -6,4 +6,6 @@ build/
 
 # Ignorer les images de l'OS
 *.bin
-*.iso
+# *.iso # Handled by release/
+release/
+iso_root/
