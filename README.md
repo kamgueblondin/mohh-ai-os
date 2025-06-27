@@ -130,3 +130,10 @@ La vision pour Mohh AI-OS est encore loin d'être complète. Les prochaines gran
 
 ## Contribution
 Ce projet est une entreprise d'apprentissage et d'expérimentation. Toute contribution, rapport de bug ou suggestion est la bienvenue. N'hésitez pas à ouvrir une "Issue" ou une "Pull Request".
+
+## Help Command
+Compilation et Exécution Prérequis Avant de commencer, assurez-vous d'avoir les outils suivants :
+
+git make gcc, grub-pc-bin et binutils (le paquet build-essential sur Debian/Ubuntu) nasm (Netwide Assembler) qemu-system-x86 (pour l'émulation) xorriso (pour la création de l'image ISO, paquet xorriso) Sur Linux (Recommandé : Ubuntu, Debian) C'est l'environnement de développement natif pour ce projet.
+
+Compiler le projet : Assurez-toi d'avoir compilé le projet avec make. Créer l'image ISO bootable(make iso). Elle créera un fichier mohh-ai-os.iso met le dans un dossier release.
