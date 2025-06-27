@@ -21,8 +21,15 @@ volatile task_t* task_queue_head = NULL;
 volatile uint32_t next_task_id = 1; // Commencer les PID à 1 (0 pourrait être réservé)
 
 #define KERNEL_TASK_STACK_SIZE PAGE_SIZE
-#define USER_STACK_PAGES 1
-#define USER_STACK_SIZE (USER_STACK_PAGES * PAGE_SIZE)
+// #define USER_STACK_PAGES 1 // Defined in task.h now or locally
+// #define USER_STACK_SIZE (USER_STACK_PAGES * PAGE_SIZE) // Defined in task.h now
+
+// User stack constants (can also be in a dedicated memory layout header)
+#define USER_STACK_VIRTUAL_TOP         0xC0000000 // Example: 3GB mark
+#define USER_STACK_NUM_PAGES           4          // Example: 16KB stack
+#define USER_STACK_SIZE_BYTES          (USER_STACK_NUM_PAGES * PAGE_SIZE)
+#define USER_STACK_VIRTUAL_BOTTOM      (USER_STACK_VIRTUAL_TOP - USER_STACK_SIZE_BYTES)
+
 
 void tasking_init() {
     asm volatile("cli");
@@ -125,7 +132,9 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
 
     // Charger l'ELF. elf_load s'occupe d'allouer les pages physiques
     // et de les mapper dans l'espace virtuel via vmm_map_user_page.
-    uint32_t entry_point = elf_load(elf_data);
+    // IMPORTANT: elf_load doit être conscient qu'il ne peut pas simplement mapper à des adresses physiques.
+    // Il doit choisir des adresses virtuelles utilisateur (par exemple, à partir de 0x00010000 ou 0x08048000).
+    uint32_t entry_point = elf_load(elf_data); // elf_load needs to handle virtual addresses.
     if (entry_point == 0) {
         // print_string("Failed to load ELF: ", 0x0C); print_string(path_in_initrd, 0x0C); print_char('\n',0,0,0);
         pmm_free_page(new_task);
@@ -133,27 +142,25 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
         return -1;
     }
 
-    // Allouer la pile utilisateur (plusieurs pages pour être sûr)
-    void* user_stack_phys_bottom = NULL;
-    for (int i = 0; i < USER_STACK_PAGES; ++i) {
-        void* page = pmm_alloc_page();
-        if (!page) {
-            // print_string("Failed to allocate user stack\n", 0x0C);
-            // TODO: Libérer les pages ELF et la TCB
+    // Allouer et mapper la pile utilisateur dans la plage virtuelle définie
+    // USER_STACK_VIRTUAL_BOTTOM à USER_STACK_VIRTUAL_TOP
+    for (int i = 0; i < USER_STACK_NUM_PAGES; ++i) {
+        void* phys_page_for_stack = pmm_alloc_page();
+        if (!phys_page_for_stack) {
+            // print_string("Failed to allocate user stack page\n", 0x0C);
+            // TODO: Libérer les pages ELF et la TCB. Cela nécessite de savoir quelles pages ELF a allouées.
+            // Pour l'instant, libération simple de la TCB.
             pmm_free_page(new_task);
-            // Il faudrait aussi dé-mapper et libérer les pages allouées par elf_load. Complexe.
             asm volatile("sti");
-            return -1;
+            return -1; // Erreur
         }
-        if (i == 0) user_stack_phys_bottom = page;
-        // Mapper la page de pile dans l'espace utilisateur.
-        // L'adresse virtuelle de la pile doit être choisie avec soin.
-        // Pour l'instant, avec un VMM global, l'adresse physique EST l'adresse virtuelle.
-        // Une adresse typique pour le bas de la pile utilisateur pourrait être 0xC0000000 - USER_STACK_SIZE.
-        // Mais ici, on utilise l'adresse physique directement comme virtuelle.
-        vmm_map_user_page(page, page); // Mappe la page physique à elle-même comme virtuelle
+        // Calcule l'adresse virtuelle pour la page de pile actuelle (en partant du bas)
+        void* stack_page_vaddr = (void*)(USER_STACK_VIRTUAL_BOTTOM + i * PAGE_SIZE);
+        vmm_map_user_page(stack_page_vaddr, phys_page_for_stack);
     }
-    uint32_t user_stack_top = (uint32_t)user_stack_phys_bottom + USER_STACK_SIZE;
+
+    // ESP pour le mode utilisateur doit pointer vers le sommet de la pile allouée.
+    uint32_t esp_user_initial = USER_STACK_VIRTUAL_TOP;
 
     // Préparer argc et argv sur la pile utilisateur
     // 1. Compter argc et calculer la taille totale des chaînes argv
@@ -169,33 +176,38 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
     }
 
     // L'espace nécessaire sur la pile: total_argv_strlen + (argc + 1) * sizeof(char*) + sizeof(int) pour argc
-    // On va placer les chaînes tout en haut de la pile, puis les pointeurs, puis argc.
-    uint32_t esp_user = user_stack_top;
+    // On va placer les chaînes tout en haut de la pile (aux adresses les plus basses de la zone argc/argv),
+    // puis les pointeurs, puis argc. ESP pointera finalement vers argc.
+    uint32_t current_esp_user = esp_user_initial;
 
     // Copier les chaînes d'arguments sur la pile utilisateur
-    char* argv_user_pointers[argc + 1]; // Tableau temporaire pour stocker les adresses des chaînes sur la pile
+    // Les chaînes sont copiées en premier, aux adresses les plus hautes de la zone de pile utilisée par argv et les chaînes.
+    // current_esp_user descendra au fur et à mesure.
+    current_esp_user -= total_argv_strlen;
+    char* string_area_on_stack_start = (char*)current_esp_user; // Début de la zone où les chaînes sont stockées
 
-    esp_user -= total_argv_strlen; // Réserver la place pour les chaînes
-    char* current_string_pos_on_stack = (char*)esp_user;
+    char* argv_on_stack_pointers[argc + 1]; // Tableau temporaire pour stocker les adresses virtuelles des chaînes sur la pile
 
+    char* current_string_write_ptr = string_area_on_stack_start;
     for (int i = 0; i < argc; i++) {
         const char* arg_source = argv_from_caller[i];
         size_t len = 0;
         while(arg_source[len]) len++;
-        memcpy(current_string_pos_on_stack, arg_source, len + 1);
-        argv_user_pointers[i] = current_string_pos_on_stack; // Stocker l'adresse virtuelle sur la pile
-        current_string_pos_on_stack += (len + 1);
+        memcpy(current_string_write_ptr, arg_source, len + 1);
+        argv_on_stack_pointers[i] = current_string_write_ptr; // C'est l'adresse virtuelle sur la pile utilisateur
+        current_string_write_ptr += (len + 1);
     }
-    argv_user_pointers[argc] = NULL; // Dernier élément de argv est NULL
+    argv_on_stack_pointers[argc] = NULL; // Dernier élément de argv est NULL
 
     // Pousser les pointeurs argv (qui pointent vers les chaînes déjà sur la pile)
-    esp_user -= (argc + 1) * sizeof(char*);
-    memcpy((void*)esp_user, argv_user_pointers, (argc + 1) * sizeof(char*));
-    new_task->argv_user_stack_ptr = (char**)esp_user; // Sauvegarder où argv est sur la pile
+    // Ces pointeurs sont poussés après les chaînes elles-mêmes.
+    current_esp_user -= (argc + 1) * sizeof(char*);
+    memcpy((void*)current_esp_user, argv_on_stack_pointers, (argc + 1) * sizeof(char*));
+    new_task->argv_user_stack_ptr = (char**)current_esp_user; // Sauvegarder où le tableau argv[] est sur la pile
 
     // Pousser argc
-    esp_user -= sizeof(int);
-    *(int*)esp_user = argc;
+    current_esp_user -= sizeof(int);
+    *(int*)current_esp_user = argc;
     new_task->argc = argc;
 
     // Initialiser l'état du CPU pour la nouvelle tâche
@@ -206,8 +218,8 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
 
     memset(&new_task->cpu_state, 0, sizeof(cpu_state_t));
     new_task->cpu_state.eip = entry_point;
-    new_task->cpu_state.esp = esp_user; // ESP pointe vers argc sur la pile utilisateur
-    new_task->cpu_state.ebp = 0;        // Ou esp_user, selon la convention de démarrage
+    new_task->cpu_state.esp = current_esp_user; // ESP pointe vers argc sur la pile utilisateur
+    new_task->cpu_state.ebp = 0;                // Ou current_esp_user, ou USER_STACK_VIRTUAL_TOP. 0 est commun pour le _start.
 
     // EFLAGS: IF=1 (interruptions activées), IOPL=0 (pas d'accès I/O direct pour user), bit 1 toujours à 1.
     new_task->cpu_state.eflags = 0x00000202;
