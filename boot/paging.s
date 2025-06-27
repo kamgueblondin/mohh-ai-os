@@ -23,3 +23,6 @@ enable_paging:
     mov cr0, eax        ; Écrit la nouvelle valeur dans CR0 pour activer le paging
     pop ebp
     ret
+
+SECTION .note.GNU-stack
+    ; Cette section indique au linker que la pile ne doit pas être exécutable.
