@@ -16,7 +16,7 @@ OS_IMAGE = build/ai_os.bin
 ISO_IMAGE = release/mohh-ai-os.iso
 
 # Liste des fichiers objets
-OBJECTS = build/boot.o build/idt_loader.o build/isr_stubs.o build/paging.o build/context_switch.o build/return_to_usermode.o \
+OBJECTS = build/boot.o build/idt_loader.o build/isr_stubs.o build/paging.o build/context_switch.o \
           build/kernel.o build/idt.o build/interrupts.o build/keyboard.o \
           build/pmm.o build/vmm.o build/initrd.o build/libc.o \
           build/task.o build/timer.o build/syscall.o build/elf.o build/syscall_handler.o
@@ -86,10 +86,6 @@ build/paging.o: boot/paging.s
 	$(AS) $(ASFLAGS) $< -o $@
 
 build/context_switch.o: boot/context_switch.s
-	@mkdir -p $(dir $@)
-	$(AS) $(ASFLAGS) $< -o $@
-
-build/return_to_usermode.o: boot/return_to_usermode.s
 	@mkdir -p $(dir $@)
 	$(AS) $(ASFLAGS) $< -o $@
 
