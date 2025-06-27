@@ -6,6 +6,3 @@ idt_load:
     mov eax, [esp + 4]
     lidt [eax]  ; Charge le registre IDTR avec notre pointeur
     ret
-
-SECTION .note.GNU-stack
-    ; Cette section indique au linker que la pile ne doit pas être exécutable.

@@ -34,6 +34,3 @@ _start:
     ; Si kmain retourne (ce qui ne devrait pas arriver), on arrête le CPU pour éviter un crash.
     cli ; Désactive les interruptions
     hlt ; Arrête le CPU
-
-SECTION .note.GNU-stack
-    ; Cette section indique au linker que la pile ne doit pas être exécutable.

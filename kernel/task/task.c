@@ -9,19 +9,11 @@
 
 // Sélecteurs GDT pour l'espace utilisateur (avec RPL=3)
 // Ces valeurs doivent correspondre à votre configuration GDT.
-const uint16_t USER_CODE_SELECTOR = 0x18 | 3; // 0x1B (index 3, RPL 3)
-const uint16_t USER_DATA_SELECTOR = 0x20 | 3; // 0x23 (index 4, RPL 3)
-
-// Sélecteurs GDT pour le noyau (RPL 0)
-// Ces valeurs doivent correspondre à votre configuration GDT.
-const uint16_t KERNEL_CODE_SELECTOR = 0x08; // Index 1, RPL 0
-const uint16_t KERNEL_DATA_SELECTOR = 0x10; // Index 2, RPL 0
-
-// Fonction assembleur pour effectuer iret et passer en mode utilisateur
-extern void return_to_usermode();
+const uint16_t USER_CODE_SELECTOR = 0x18 | 3; // 0x1B
+const uint16_t USER_DATA_SELECTOR = 0x20 | 3; // 0x23
 
 
-extern void context_switch(task_t* old_task, task_t* new_task); // Modifié pour passer task_t*
+extern void context_switch(cpu_state_t* old_state, cpu_state_t* new_state);
 extern uint32_t read_eip(); // Pour le premier point d'entrée de la tâche noyau
 
 volatile task_t* current_task = NULL;
@@ -40,16 +32,11 @@ void tasking_init() {
     }
     current_task->id = next_task_id++;
     current_task->state = TASK_RUNNING;
-    // La tâche initiale (idle) s'exécute sur la pile mise en place par le bootloader.
-    // Son esp_kernel n'est pas explicitement défini ici car elle n'est pas "switchée" de la même manière.
-    // Si elle est preemptée, context_switch sauvegardera son esp actuel dans son esp_kernel.
-    // Initialiser les champs cpu_state pour la cohérence, même si certains ne sont pas utilisés directement.
-    memset((void*)&current_task->cpu_state, 0, sizeof(cpu_state_t)); // Cast pour enlever le volatile
-    current_task->cpu_state.eflags = 0x00000002; // IF=0 (cli), Bit 1 toujours à 1.
-                                                 // Les interruptions seront activées après l'init.
-    // esp_kernel et kernel_stack_top ne sont pas alloués/définis pour la tâche idle initiale.
-    // Elle utilise la pile existante.
-
+    current_task->cpu_state.eip = 0;
+    current_task->cpu_state.esp = 0;
+    current_task->cpu_state.ebp = 0;
+    // eflags pour la tâche initiale du noyau (idle task). IF = 0 pour l'instant.
+    current_task->cpu_state.eflags = 0x00000002; // Bit 1 est toujours 1.
     current_task->next = (struct task*)current_task;
     current_task->parent = NULL;
     current_task->child_pid_waiting_on = 0;
@@ -78,54 +65,26 @@ task_t* create_task(void (*entry_point)()) {
     new_task->parent = NULL; // Les tâches noyau directes n'ont pas de parent de cette manière
     new_task->child_pid_waiting_on = 0;
 
-    new_task->kernel_stack_top = (uint32_t)task_stack + KERNEL_TASK_STACK_SIZE;
-
-    // Initialiser la pile noyau pour context_switch
-    // La pile ressemble à ceci de haut en bas (adresses croissantes):
-    // [valeurs pour popad: edi, esi, ebp, esp_dummy, ebx, edx, ecx, eax] (8 * 4 bytes)
-    // [eflags] (4 bytes)
-    // [eip, c'est-à-dire entry_point] (4 bytes) <--- esp_kernel pointera ici initialement
-
-    uint32_t* kstack_ptr = (uint32_t*)new_task->kernel_stack_top;
-
-    // 1. EIP (entry_point de la tâche noyau)
-    kstack_ptr--; // Décrémenter avant d'écrire car la pile grandit vers le bas
-    *kstack_ptr = (uint32_t)entry_point;
-
-    // 2. EFLAGS (interruptions activées pour les tâches noyau par défaut)
-    kstack_ptr--;
-    *kstack_ptr = 0x202; // IF=1 (bit 9), bit 1 toujours à 1.
-
-    // 3. Valeurs pour POPAD (eax, ecx, edx, ebx, esp_dummy, ebp, esi, edi)
-    // L'ordre de pushad est: eax, ecx, edx, ebx, esp, ebp, esi, edi
-    // Donc, sur la pile (avant popad), on doit avoir de bas en haut:
-    // edi, esi, ebp, esp_dummy, ebx, edx, ecx, eax
-    // Mettre des zéros pour l'instant.
-    kstack_ptr--; *kstack_ptr = 0; // edi
-    kstack_ptr--; *kstack_ptr = 0; // esi
-    kstack_ptr--; *kstack_ptr = 0; // ebp (la tâche C initialisera son propre ebp)
-    kstack_ptr--; *kstack_ptr = 0; // esp_dummy (valeur popée par popad mais non utilisée)
-    kstack_ptr--; *kstack_ptr = 0; // ebx
-    kstack_ptr--; *kstack_ptr = 0; // edx
-    kstack_ptr--; *kstack_ptr = 0; // ecx
-    kstack_ptr--; *kstack_ptr = 0; // eax
-
-    new_task->esp_kernel = (uint32_t)kstack_ptr;
-
-    // Initialiser les champs de cpu_state_t qui ne sont pas sur la pile pour context_switch,
-    // mais qui pourraient être utiles pour le débogage ou d'autres raisons.
-    // Ces valeurs ne sont PAS directement utilisées par context_switch pour restaurer l'état,
-    // car tout est sur la pile noyau pointée par esp_kernel.
-    memset(&new_task->cpu_state, 0, sizeof(cpu_state_t));
-    new_task->cpu_state.eip = (uint32_t)entry_point;
+    // Configuration de la pile pour Ring 0
+    // Pour une tâche noyau, CS/SS sont les sélecteurs noyau.
+    // EFLAGS: IF=1 (0x200) + bit 1 (0x2) = 0x202
     new_task->cpu_state.eflags = 0x202;
-    // Les sélecteurs de segment pour une tâche noyau.
-    new_task->cpu_state.cs = KERNEL_CODE_SELECTOR;
-    new_task->cpu_state.ds = KERNEL_DATA_SELECTOR;
-    new_task->cpu_state.es = KERNEL_DATA_SELECTOR;
-    new_task->cpu_state.fs = KERNEL_DATA_SELECTOR;
-    new_task->cpu_state.gs = KERNEL_DATA_SELECTOR;
-    new_task->cpu_state.ss_user = KERNEL_DATA_SELECTOR; // ss_user car c'est le nom du champ, mais c'est ss noyau ici
+    new_task->cpu_state.eip = (uint32_t)entry_point;
+
+    // Initialisation de la pile noyau. L'ESP pointe au sommet de la pile.
+    // La pile grandit vers le bas.
+    uint32_t stack_top = (uint32_t)task_stack + KERNEL_TASK_STACK_SIZE;
+    new_task->cpu_state.esp = stack_top;
+    // Pour une tâche noyau démarrant à entry_point, on n'a pas besoin de pousser grand chose sur la pile
+    // car elle ne fait pas "iret". Mais si entry_point est une fonction C, elle s'attendra à un ebp valide.
+    new_task->cpu_state.ebp = 0; // Ou stack_top, selon les conventions. 0 est commun.
+
+    new_task->cpu_state.eax = 0;
+    new_task->cpu_state.ebx = 0;
+    new_task->cpu_state.ecx = 0;
+    new_task->cpu_state.edx = 0;
+    new_task->cpu_state.esi = 0;
+    new_task->cpu_state.edi = 0;
 
     if (task_queue_head == NULL) {
         task_queue_head = new_task;
@@ -245,98 +204,25 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
     new_task->parent = (struct task*)current_task; // La tâche appelante est le parent
     new_task->child_pid_waiting_on = 0; // L'enfant n'attend personne au début
 
-    // Allouer une pile noyau pour cette tâche utilisateur
-    void* kernel_stack_page = pmm_alloc_page();
-    if (!kernel_stack_page) {
-        // print_string("Failed to allocate kernel stack for user process\n", 0x0C);
-        // TODO: Libérer les pages ELF, la pile utilisateur, la TCB.
-        pmm_free_page(new_task);
-        // Il faudrait aussi dé-mapper et libérer les pages allouées par elf_load et la pile user.
-        asm volatile("sti");
-        return -1;
-    }
-    new_task->kernel_stack_top = (uint32_t)kernel_stack_page + KERNEL_TASK_STACK_SIZE;
-    uint32_t* kstack_ptr = (uint32_t*)new_task->kernel_stack_top;
-
-    // Préparer la pile noyau pour le premier context_switch vers cette tâche.
-    // Le context_switch fera RET vers `return_to_usermode`, qui fera IRET.
-    // La pile doit être configurée comme suit (de haut en bas, esp_kernel pointera au sommet):
-    //
-    // --- Sommet de la pile (esp_kernel initial) ---
-    // EIP (adresse de return_to_usermode)       <--- pour le RET de context_switch
-    // EFLAGS (pour le mode noyau, ex: 0x202)     <--- pour POPFD avant RET vers return_to_usermode
-    // Registres pour POPAD (eax,ecx,edx,ebx,esp_dummy,ebp,esi,edi) (valeurs initiales, typiquement 0)
-    // --- Dessous, la frame IRET ---
-    // EIP (entry_point de l'ELF)
-    // CS (USER_CODE_SELECTOR)
-    // EFLAGS (pour le mode utilisateur, ex: 0x202)
-    // ESP (esp_user)
-    // SS (USER_DATA_SELECTOR)
-    // --- Bas de la pile préparée ---
-
-    // 1. Adresse de return_to_usermode (pour le RET final de context_switch)
-    kstack_ptr--;
-    *kstack_ptr = (uint32_t)return_to_usermode;
-
-    // 2. EFLAGS du Noyau (pour le POPFD avant RET vers return_to_usermode)
-    //    Interruptions activées.
-    kstack_ptr--;
-    *kstack_ptr = 0x202;
-
-    // 3. Registres pour POPAD (eax, ecx, edx, ebx, esp_dummy, ebp, esi, edi)
-    //    Mettre des zéros. ebp=0 est une convention commune pour la fin de la chaîne de pile.
-    kstack_ptr--; *kstack_ptr = 0; // edi
-    kstack_ptr--; *kstack_ptr = 0; // esi
-    kstack_ptr--; *kstack_ptr = 0; // ebp
-    kstack_ptr--; *kstack_ptr = 0; // esp_dummy
-    kstack_ptr--; *kstack_ptr = 0; // ebx
-    kstack_ptr--; *kstack_ptr = 0; // edx
-    kstack_ptr--; *kstack_ptr = 0; // ecx
-    kstack_ptr--; *kstack_ptr = 0; // eax (peut être argc, mais le standard est via la pile user)
-
-    // Maintenant, la frame IRET (qui sera "sous" les valeurs pour popad/popfd/ret sur la pile)
-    // L'ordre est important pour l'instruction IRET.
-    // SS, ESP, EFLAGS, CS, EIP (du bas vers le haut de la pile)
-
-    // 4. EIP utilisateur (entry_point de l'ELF)
-    kstack_ptr--;
-    *kstack_ptr = entry_point;
-
-    // 5. CS utilisateur
-    kstack_ptr--;
-    *kstack_ptr = USER_CODE_SELECTOR;
-
-    // 6. EFLAGS utilisateur (IF=1, IOPL=0 pour l'instant)
-    //    Bit 1 est toujours 1. Bit 9 (IF) = 1.
-    //    IOPL (bits 12-13) = 00.
-    //    VM (bit 17) = 0.
-    kstack_ptr--;
-    *kstack_ptr = 0x202; // User EFLAGS (0x00000202)
-
-    // 7. ESP utilisateur (pointe vers argc sur la pile utilisateur)
-    kstack_ptr--;
-    *kstack_ptr = esp_user;
-
-    // 8. SS utilisateur
-    kstack_ptr--;
-    *kstack_ptr = USER_DATA_SELECTOR;
-
-    new_task->esp_kernel = (uint32_t)kstack_ptr;
-
-    // Remplir la structure cpu_state pour information/débogage.
-    // Ces valeurs ne sont pas directement utilisées par context_switch si esp_kernel est bien configuré.
     memset(&new_task->cpu_state, 0, sizeof(cpu_state_t));
-    new_task->cpu_state.eip = entry_point; // EIP utilisateur
-    new_task->cpu_state.cs = USER_CODE_SELECTOR;
-    new_task->cpu_state.eflags = 0x202;    // EFLAGS utilisateur
-    new_task->cpu_state.esp_user = esp_user;
-    new_task->cpu_state.ss_user = USER_DATA_SELECTOR;
-    // Les autres segments pour le mode utilisateur
-    new_task->cpu_state.ds = USER_DATA_SELECTOR;
-    new_task->cpu_state.es = USER_DATA_SELECTOR;
-    new_task->cpu_state.fs = USER_DATA_SELECTOR;
-    new_task->cpu_state.gs = USER_DATA_SELECTOR;
-    // Les registres généraux (eax, etc.) sont mis à 0 sur la pile, donc ici aussi pour cohérence.
+    new_task->cpu_state.eip = entry_point;
+    new_task->cpu_state.esp = esp_user; // ESP pointe vers argc sur la pile utilisateur
+    new_task->cpu_state.ebp = 0;        // Ou esp_user, selon la convention de démarrage
+
+    // EFLAGS: IF=1 (interruptions activées), IOPL=0 (pas d'accès I/O direct pour user), bit 1 toujours à 1.
+    new_task->cpu_state.eflags = 0x00000202;
+                                        // Pour IOPL=3 (accès aux ports), il faudrait 0x3202.
+                                        // Les syscalls wrappers utilisent int 0x80, donc IOPL n'est pas critique ici.
+
+    // Segments utilisateur (doivent être configurés dans la GDT)
+    // TODO: La structure cpu_state_t actuelle ne stocke pas les sélecteurs de segment.
+    // Ils devront être mis sur la pile d'une manière ou d'une autre avant le premier IRET vers user mode.
+    // new_task->cpu_state.cs = USER_CODE_SELECTOR;
+    // new_task->cpu_state.ss = USER_DATA_SELECTOR;
+    // new_task->cpu_state.ds = USER_DATA_SELECTOR;
+    // new_task->cpu_state.es = USER_DATA_SELECTOR;
+    // new_task->cpu_state.fs = USER_DATA_SELECTOR; // Ou un sélecteur TLS si utilisé
+    // new_task->cpu_state.gs = USER_DATA_SELECTOR; // Ou un sélecteur TLS si utilisé
 
     // Ajouter à la file des tâches
     if (task_queue_head == NULL) { // Devrait être la tâche noyau initiale
@@ -441,9 +327,5 @@ void schedule() {
         return;
     }
 
-    // current_task est volatile task_t*. context_switch attend task_t*.
-    // Caster explicitement pour indiquer que nous sommes conscients de la perte de volatile.
-    // C'est généralement acceptable car context_switch accède à esp_kernel qui est
-    // censé être stable pendant l'exécution de context_switch lui-même.
-    context_switch(prev_task, (task_t*)current_task);
+    context_switch(&prev_task->cpu_state, &current_task->cpu_state);
 }

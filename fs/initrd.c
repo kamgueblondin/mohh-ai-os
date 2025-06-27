@@ -99,8 +99,10 @@ char* initrd_read_file(const char* filename, uint32_t* file_size_out) {
         if(file_size_out) *file_size_out = 0;
         return NULL;
     }
-    // La fonction strcmp est liée depuis libc.c, elle devrait toujours être disponible.
-    // La vérification if (!strcmp) est donc inutile et incorrecte.
+    if (!strcmp) { // Si strcmp n'est pas disponible
+         if(file_size_out) *file_size_out = 0;
+        return NULL;
+    }
 
     tar_header_t* current_header = initrd_start_addr;
     uint32_t offset = 0;

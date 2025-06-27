@@ -163,6 +163,3 @@ IRQ 15, 47 ; Secondary ATA Hard Disk
 extern fault_handler      ; For CPU exceptions
 extern irq_handler_c      ; For common IRQs (not keyboard)
 extern keyboard_handler_main ; For keyboard (IRQ1)
-
-SECTION .note.GNU-stack
-    ; Cette section indique au linker que la pile ne doit pas être exécutable.
