@@ -7,5 +7,5 @@ build/
 # Ignorer les images de l'OS
 *.bin
 # *.iso # Handled by release/
-release/
+# release/ # Temporarily removed to allow ISO checking
 iso_root/
