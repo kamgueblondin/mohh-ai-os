@@ -1,5 +1,7 @@
 bits 32
 
+section .note.GNU-stack noalloc noexec nowrite progbits
+
 global syscall_interrupt_handler_asm ; Exporte le symbole pour syscall.c
 extern syscall_handler             ; Le handler C que nous allons appeler
 

@@ -81,9 +81,9 @@ void kmain(void) {
     // init_vga_kb(vga_x, vga_y, current_color); // Supprimé car keyboard.c a été modifié
 
     // Placeholder pour la structure Multiboot et l'adresse de fin du noyau.
-    uint32_t multiboot_magic = 0x2BADB002;
-    uint32_t multiboot_addr = 0;
-    uint32_t kernel_end_addr = 0; // TODO: Obtenir cette valeur depuis le linker script
+    // uint32_t multiboot_magic = 0x2BADB002; // Non utilisé actuellement
+    uint32_t multiboot_addr = 0; // Non utilisé par pmm_init dans sa forme actuelle
+    uint32_t kernel_end_addr = 0; // TODO: Obtenir cette valeur depuis le linker script, non utilisé par pmm_init actuellement
 
     // Initialiser la mémoire physique et virtuelle
     uint32_t total_memory_bytes = 16 * 1024 * 1024; // Supposition pour l'instant

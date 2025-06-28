@@ -99,10 +99,8 @@ char* initrd_read_file(const char* filename, uint32_t* file_size_out) {
         if(file_size_out) *file_size_out = 0;
         return NULL;
     }
-    if (!strcmp) { // Si strcmp n'est pas disponible
-         if(file_size_out) *file_size_out = 0;
-        return NULL;
-    }
+    // La vérification if (!strcmp) a été supprimée car elle était incorrecte.
+    // strcmp est déclaré extern et est supposé être toujours disponible.
 
     tar_header_t* current_header = initrd_start_addr;
     uint32_t offset = 0;
