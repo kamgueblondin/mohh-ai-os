@@ -11,6 +11,9 @@ __attribute__((aligned(4096))) uint32_t kernel_page_directory[1024];
 // Également alignée sur 4KB.
 __attribute__((aligned(4096))) uint32_t first_page_table[1024];
 
+// Une deuxième table de pages pour mapper les 4MB suivants (4MB à 8MB).
+__attribute__((aligned(4096))) uint32_t second_page_table[1024];
+
 // Fonctions assembleur externes pour charger le répertoire de pages et activer le paging.
 extern void load_page_directory(uint32_t* page_directory_physical_addr);
 extern void enable_paging();
@@ -36,11 +39,22 @@ void vmm_init() {
     //    Adresse physique de first_page_table. Flags: Présent, Read/Write, Supervisor.
     kernel_page_directory[0] = ((uint32_t)&first_page_table) | (PAGE_PRESENT | PAGE_READ_WRITE);
 
-    // Les autres 1023 entrées du répertoire de pages ne sont pas utilisées pour l'instant.
+    // 2b. Initialiser la deuxième table de pages (second_page_table)
+    //     pour mapper les 4 Mo suivants (0x00400000 - 0x007FFFFF)
+    //     de manière identitaire.
+    for (int i = 0; i < 1024; i++) {
+        // Adresse physique de la page = 0x400000 + (i * 0x1000)
+        // Flags: Présent (1), Read/Write (1), Supervisor (0)
+        second_page_table[i] = (0x400000 + (i * 0x1000)) | (PAGE_PRESENT | PAGE_READ_WRITE);
+    }
+    // La deuxième entrée du répertoire de pages pointera vers second_page_table.
+    kernel_page_directory[1] = ((uint32_t)&second_page_table) | (PAGE_PRESENT | PAGE_READ_WRITE);
+
+
+    // Les autres 1022 entrées du répertoire de pages ne sont pas utilisées pour l'instant.
     // Elles devraient être marquées comme non présentes.
-    // Flags: Non Présent (0), Read/Write (1) -> 0b010 = 2 (ou juste 0)
-    for (int i = 1; i < 1024; i++) {
-        kernel_page_directory[i] = 0; // Ou PAGE_READ_WRITE si on veut permettre la création future sans changer les flags R/W
+    for (int i = 2; i < 1024; i++) { // Commence à 2 maintenant
+        kernel_page_directory[i] = 0;
     }
 
     // 3. Charger l'adresse physique du répertoire de pages dans CR3.
