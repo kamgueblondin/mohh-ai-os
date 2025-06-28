@@ -130,13 +130,6 @@ void kmain(uint32_t physical_pd_addr) {
     print_string("Gestionnaires PMM et VMM initialises.\n", current_color);
 
     // Initialiser l'initrd
-    // Idéalement, keyboard.c utilise les globales vga_x, vga_y, current_color directement.
-    // init_vga_kb(vga_x, vga_y, current_color); // Supprimé car keyboard.c a été modifié
-
-    // The PMM/VMM init block with CR3 debug prints is now the sole PMM/VMM init.
-    // Duplicated variable declarations and calls below this point have been removed.
-
-    // Initialiser l'initrd
     // TODO: Obtenir initrd_location depuis Multiboot
     uint32_t initrd_location = 0x200000; // Adresse codée en dur pour l'instant
     if (initrd_location != 0) {
