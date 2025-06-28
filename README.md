@@ -85,10 +85,6 @@ C'est l'environnement de développement natif pour ce projet.
     make run
     ```
     QEMU se lancera et démarrera directement sur votre noyau. Vous devriez voir le shell de Mohh AI-OS apparaître.
-  ```bash
-    make iso
-    ```
-    Création de l'image ISO bootable...
 
 ### Sur Windows (via WSL2)
 La meilleure façon de développer sur Windows est d'utiliser le Sous-système Windows pour Linux (WSL2).
