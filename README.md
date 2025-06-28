@@ -60,6 +60,7 @@ Avant de commencer, assurez-vous d'avoir les outils suivants :
 *   `nasm` (Netwide Assembler)
 *   `qemu-system-x86` (pour l'émulation)
 *   `xorriso` (pour la création de l'image ISO, paquet `xorriso`)
+*   `grub-pc-bin` (Grub)
 
 ### Sur Linux (Recommandé : Ubuntu, Debian)
 C'est l'environnement de développement natif pour ce projet.
@@ -72,7 +73,7 @@ C'est l'environnement de développement natif pour ce projet.
 2.  **Installer les dépendances :**
     ```bash
     sudo apt-get update
-    sudo apt-get install build-essential nasm qemu-system-x86 xorriso
+    sudo apt-get install build-essential nasm qemu-system-x86 xorriso grub-pc-bin git
     ```
 3.  **Compiler le système d'exploitation :**
     ```bash
@@ -84,6 +85,10 @@ C'est l'environnement de développement natif pour ce projet.
     make run
     ```
     QEMU se lancera et démarrera directement sur votre noyau. Vous devriez voir le shell de Mohh AI-OS apparaître.
+  ```bash
+    make iso
+    ```
+    Création de l'image ISO bootable...
 
 ### Sur Windows (via WSL2)
 La meilleure façon de développer sur Windows est d'utiliser le Sous-système Windows pour Linux (WSL2).
