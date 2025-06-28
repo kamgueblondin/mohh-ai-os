@@ -90,7 +90,7 @@ C'est l'environnement de développement natif pour ce projet.
 La meilleure façon de développer sur Windows est d'utiliser le Sous-système Windows pour Linux (WSL2).
 
 1.  **Installer WSL2** : Suivez le guide officiel de Microsoft pour installer WSL2 et une distribution Linux (par exemple, Ubuntu).
-2.  **Lancer votre terminal WSL2.**
+2.  **Lancer votre terminal WSL2.** : wsl -d Ubuntu
 3.  **Suivre les instructions pour Linux ci-dessus.** Toutes les commandes (`git`, `apt-get`, `make`) fonctionneront de la même manière à l'intérieur de WSL2. QEMU s'exécutera également dans cet environnement.
 
 ### Installation sur une Machine Virtuelle (VirtualBox)
