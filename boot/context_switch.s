@@ -1,17 +1,21 @@
 bits 32
 
-global context_switch
+section .note.GNU-stack noalloc noexec nowrite progbits
+    ; This section is just for the note.
 
-%define OFF_EAX    0
-%define OFF_EBX    4
-%define OFF_ECX    8
-%define OFF_EDX    12
-%define OFF_ESI    16
-%define OFF_EDI    20
-%define OFF_EBP    24
-%define OFF_EIP    28
-%define OFF_ESP    32
-%define OFF_EFLAGS 36
+section .text                 ; All code and data from here should be in .text
+    global context_switch
+
+    %define OFF_EAX    0
+    %define OFF_EBX    4
+    %define OFF_ECX    8
+    %define OFF_EDX    12
+    %define OFF_ESI    16
+    %define OFF_EDI    20
+    %define OFF_EBP    24
+    %define OFF_EIP    28
+    %define OFF_ESP    32
+    %define OFF_EFLAGS 36
 
 context_switch:
     push esi

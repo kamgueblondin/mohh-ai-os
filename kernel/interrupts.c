@@ -53,9 +53,9 @@ void io_wait(void) {
 }
 
 void pic_remap(int offset1, int offset2) {
-    unsigned char a1, a2;
-    a1 = inb(PIC1_DATA);
-    a2 = inb(PIC2_DATA);
+    // unsigned char a1, a2; // Variables non utilisées, initialement pour sauvegarder les masques
+    // a1 = inb(PIC1_DATA);
+    // a2 = inb(PIC2_DATA);
     outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4); io_wait();
     outb(PIC2_COMMAND, ICW1_INIT | ICW1_ICW4); io_wait();
     outb(PIC1_DATA, offset1); io_wait();
@@ -107,7 +107,7 @@ void fault_handler(void* esp_at_call) {
     //                      ; This is confusing. Let's assume the indices [10], [11], [12] used before were correct
     //                      ; relative to the 'esp' value *after* all items were pushed by CPU and stubs.
 
-    uint32_t* stack_from_stub_perspective = (uint32_t*)((char*)esp_at_call + 4); // Approximate adjustment if esp_at_call is [ebp+8] for first C arg
+    // uint32_t* stack_from_stub_perspective = (uint32_t*)((char*)esp_at_call + 4); // Non utilisé, probablement pour du débogage antérieur
 
     // Simpler interpretation: The `esp_at_call` is the `esp` right after `push eax` (ds_val) in the stub.
     // So:

@@ -339,5 +339,5 @@ void schedule() {
         return;
     }
 
-    context_switch(&prev_task->cpu_state, &current_task->cpu_state);
+    context_switch(&prev_task->cpu_state, (cpu_state_t*)&current_task->cpu_state);
 }
