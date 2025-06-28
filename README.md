@@ -138,3 +138,13 @@ Compilation et Exécution Prérequis Avant de commencer, assurez-vous d'avoir le
 git make gcc, grub-pc-bin et binutils (le paquet build-essential sur Debian/Ubuntu) nasm (Netwide Assembler) qemu-system-x86 (pour l'émulation) xorriso (pour la création de l'image ISO, paquet xorriso) Sur Linux (Recommandé : Ubuntu, Debian) C'est l'environnement de développement natif pour ce projet.
 
 Compiler le projet : Assurez-toi d'avoir compilé le projet avec make. Créer l'image ISO bootable(make iso). Elle créera un fichier mohh-ai-os.iso met le dans un dossier release.
+
+Pour que QEMU affiche une fenêtre graphique pour votre système d'exploitation (au lieu de fonctionner en mode console/série uniquement), vous devez supprimer l'option -nographic de la commande QEMU.
+
+Dans votre Makefile, la commande run est actuellement :
+
+qemu-system-i386 -kernel $(OS_IMAGE) -initrd my_initrd.tar -nographic -serial mon:stdio -d int,cpu_reset,guest_errors -no-reboot -no-shutdown -net none
+Modifiez-la pour qu'elle ressemble à ceci :
+
+qemu-system-i386 -kernel $(OS_IMAGE) -initrd my_initrd.tar -serial mon:stdio -d int,cpu_reset,guest_errors -no-reboot -no-shutdown -net none
+
