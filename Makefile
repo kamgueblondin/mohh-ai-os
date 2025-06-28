@@ -122,8 +122,8 @@ initrd: userspace_build
 
 # Cible pour exécuter l'OS dans QEMU
 run: $(OS_IMAGE) initrd
-	# Lancer QEMU avec le noyau ET l'initrd et les options de débogage, log vers fichier
-	qemu-system-i386 -kernel $(OS_IMAGE) -initrd my_initrd.tar -nographic -serial stdio -d int,cpu_reset,guest_errors -D qemu_log.txt -no-reboot -no-shutdown
+	# Lancer QEMU avec le noyau ET l'initrd, headless, serial multiplexé sur stdio, more verbose debug
+	qemu-system-i386 -kernel $(OS_IMAGE) -initrd my_initrd.tar -nographic -serial mon:stdio -d int,cpu_reset,guest_errors -no-reboot -no-shutdown
 
 # Cible pour nettoyer le projet
 clean:

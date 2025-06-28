@@ -1,7 +1,9 @@
 CC = gcc
 LD = ld
 CFLAGS = -m32 -ffreestanding -nostdlib -fno-pie -I.
-LDFLAGS = -m elf_i386 -Ttext=0x40000000 --oformat binary
+# Output ELF files and specify 'main' as the entry point.
+# Using a common base address for simple user programs.
+LDFLAGS = -m elf_i386 -Ttext=0x00010000 --entry=main
 
 # Cibles par défaut
 all: shell.bin fake_ai.bin
