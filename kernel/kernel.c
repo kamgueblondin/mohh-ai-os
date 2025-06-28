@@ -71,11 +71,30 @@ void clear_screen(char color) {
 }
 
 // La fonction principale de notre noyau
-void kmain(void) {
+// physical_pd_addr is the physical address of boot_page_directory from boot.s
+void kmain(uint32_t physical_pd_addr) {
     current_color = 0x1F; // Texte blanc sur fond bleu
     clear_screen(current_color);
     // EARLY PRINT FOR DEBUGGING
     print_string("KMAIN_CALLED_EARLY_DEBUG\n", 0x0A); // Green on Black for distinction
+
+    // Re-assert our page directory from _start, in case SMM or something changed CR3.
+    // Also ensure paging is enabled.
+    asm volatile (
+        "mov %0, %%eax\n\t"
+        "mov %%eax, %%cr3"
+        : : "r"(physical_pd_addr) : "eax");
+
+    uint32_t temp_cr0;
+    asm volatile("mov %%cr0, %0" : "=r"(temp_cr0));
+    if (!(temp_cr0 & 0x80000000)) { // If PG bit is not set
+        temp_cr0 |= 0x80000000;      // Set PG bit
+        asm volatile("mov %0, %%cr0" : : "r"(temp_cr0));
+    }
+    // Add a print statement to confirm. Need itoa for physical_pd_addr.
+    // For now, just a generic message.
+    print_string("CR3 re-asserted in kmain.\n", 0x0B); // Cyan on Black
+
     print_string("AI-OS Demarrage...\n", current_color);
 
     // Initialisation basique du curseur pour keyboard.c (si nécessaire)
