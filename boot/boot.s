@@ -23,9 +23,9 @@ stack_bottom:
     resb 16384 ; 16 KB
 stack_top:
 
-; Statically allocated page directory and one page table for initial identity mapping.
-; These must be page-aligned (4096 bytes).
-section .data align=4096
+; Statically allocated page directory and page tables for initial identity mapping.
+; These must be page-aligned (4096 bytes) and are uninitialized (will be zeroed by code).
+align 4096
 boot_page_directory:
     resb 4096
 boot_page_table1: ; Maps 0MB - 4MB
