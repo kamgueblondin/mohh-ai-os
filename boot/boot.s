@@ -4,9 +4,14 @@ bits 32
 ; Section pour l'en-tête Multiboot (magic numbers et flags)
 section .multiboot
 align 4
+    ; Flags for Multiboot header
+    MBALIGN    equ 1<<0  ; Align loaded modules on page boundaries (0x01)
+    MEMINFO    equ 1<<1  ; Provide memory map (0x02)
+    MULTIBOOT_HEADER_FLAGS: equ MBALIGN | MEMINFO ; Request page alignment and memory map (0x03)
+
     MULTIBOOT_HEADER_MAGIC: equ 0x1BADB002
-    MULTIBOOT_HEADER_FLAGS: equ 0x00
     CHECKSUM: equ -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
+
     dd MULTIBOOT_HEADER_MAGIC
     dd MULTIBOOT_HEADER_FLAGS
     dd CHECKSUM
@@ -23,6 +28,10 @@ section .text
 global _start: ; Point d'entrée global pour le linker
 
 _start:
+    ; Attempt to write 'S' to the top-left of VGA memory (0xB8000)
+    ; Character 'S' in AL, Attribute Yellow (0E) on Black in AH
+    mov word [0xB8000], 0x0E53 ; 0E for attribute, 53 for 'S'
+
     ; Mettre en place le pointeur de pile (esp) pour qu'il pointe vers le haut de notre pile
     mov esp, stack_top
 

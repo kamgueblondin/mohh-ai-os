@@ -74,6 +74,8 @@ void clear_screen(char color) {
 void kmain(void) {
     current_color = 0x1F; // Texte blanc sur fond bleu
     clear_screen(current_color);
+    // EARLY PRINT FOR DEBUGGING
+    print_string("KMAIN_CALLED_EARLY_DEBUG\n", 0x0A); // Green on Black for distinction
     print_string("AI-OS Demarrage...\n", current_color);
 
     // Initialisation basique du curseur pour keyboard.c (si nécessaire)
