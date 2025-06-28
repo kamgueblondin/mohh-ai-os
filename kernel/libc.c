@@ -18,6 +18,29 @@ void* memcpy(void* dest, const void* src, size_t n) {
     return dest;
 }
 
+// Function to print a character directly via print_char in kernel.c
+// This requires print_char to be globally accessible or passed somehow.
+// Assuming print_char updates global vga_x, vga_y, current_color
+extern void print_char(char c, int x, int y, char color); // From kernel.c
+extern int vga_x; // from kernel.c
+extern int vga_y; // from kernel.c
+
+void print_hex_char(unsigned char c, char color) {
+    unsigned char nibble;
+    nibble = (c >> 4) & 0x0F;
+    print_char((nibble < 10) ? (nibble + '0') : (nibble - 10 + 'A'), vga_x, vga_y, color);
+    nibble = c & 0x0F;
+    print_char((nibble < 10) ? (nibble + '0') : (nibble - 10 + 'A'), vga_x, vga_y, color);
+}
+
+void print_hex(uint32_t n, char color) {
+    print_string("0x", color);
+    print_hex_char((n >> 24) & 0xFF, color);
+    print_hex_char((n >> 16) & 0xFF, color);
+    print_hex_char((n >> 8) & 0xFF, color);
+    print_hex_char(n & 0xFF, color);
+}
+
 // Fonction itoa basique (entier vers chaîne ASCII)
 // Non réentrante si str est statique, mais ici str est fourni par l'appelant.
 char* itoa(uint32_t value, char* str, int base) {
