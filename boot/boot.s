@@ -25,7 +25,8 @@ stack_top:
 
 ; Statically allocated page directory and page tables for initial identity mapping.
 ; These must be page-aligned (4096 bytes) and are uninitialized (will be zeroed by code).
-align 4096
+; Explicitly re-stating section .bss to ensure context for NASM.
+section .bss align=4096 ; NASM allows align on section directive
 boot_page_directory:
     resb 4096
 boot_page_table1: ; Maps 0MB - 4MB
