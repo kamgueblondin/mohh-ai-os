@@ -111,20 +111,35 @@ void fault_handler(void* esp_at_call) {
 
     // Simpler interpretation: The `esp_at_call` is the `esp` right after `push eax` (ds_val) in the stub.
     // So:
-    // esp_at_call[0] = ds_val
-    // esp_at_call[1] = edi
+    // esp_at_call[0] = ds_val  <-- This was the old assumption if segments were pushed by C caller.
+    //
+    // Nouvelle convention avec isr_common_stub actuel (pusha, puis call fault_handler):
+    // `esp_at_call` est l'ESP après `pusha`.
+    // [esp_at_call+0]  (i.e. ((uint32_t*)esp_at_call)[0]) = EDI sauvegardé par pusha
+    // [esp_at_call+4]  (i.e. ((uint32_t*)esp_at_call)[1]) = ESI sauvegardé par pusha
     // ...
-    // esp_at_call[8] = eax_val
-    // esp_at_call[9] = int_num (pushed by macro ISR_NOERRCODE/ERRCODE before jmp isr_common_stub)
-    // esp_at_call[10] = err_code (pushed by CPU or macro before jmp isr_common_stub)
-    // esp_at_call[11] = eip_fault
-    // This seems more plausible with the original indexing [10], [11], [12] for int_num, err_code, eip.
-    // Let's stick to the original interpretation of stack indices [10], [11], [12] relative to
-    // the base of the "interrupt frame" passed implicitly to fault_handler.
+    // [esp_at_call+28] (i.e. ((uint32_t*)esp_at_call)[7]) = EAX sauvegardé par pusha
+    //
+    // Les valeurs `int_num` et `err_code` ont été poussées sur la pile AVANT `jmp isr_common_stub`
+    // (et donc avant `pusha`).
+    // Si ESP_orig est ESP avant `push byte 0` et `push byte N` dans les macros ISR_... :
+    //   [ESP_orig - 4] = int_num
+    //   [ESP_orig - 8] = err_code (ou dummy)
+    // Après `pusha` (32 octets), ESP a diminué de 32.
+    // Donc, int_num est à `[ESP_apres_pusha + 32 - 4]` par rapport à l'ESP avant les push des macros. Non, c'est plus simple.
+    //   Stack avant `jmp isr_common_stub`:
+    //     [ESP] -> int_num
+    //     [ESP+4] -> err_code
+    //     [ESP+8] -> EIP (de l'instruction fautive, poussé par CPU)
+    //     ...
+    //   Dans `isr_common_stub`, `pusha` est fait. ESP diminue de 32 octets.
+    //   Donc, `int_num` est à `[ESP_apres_pusha + 32 octets]`. Index = 32/4 = 8.
+    //   `err_code` est à `[ESP_apres_pusha + 36 octets]`. Index = 36/4 = 9.
+    //   `eip_fault` (poussé par CPU) est à `[ESP_apres_pusha + 40 octets]`. Index = 40/4 = 10.
 
-    uint32_t int_num  = ((uint32_t*)esp_at_call)[10]; // int_num pushed by our ISR_ macro
-    // uint32_t err_code = ((uint32_t*)esp_at_call)[11]; // err_code pushed by CPU or our macro
-    // uint32_t eip_fault= ((uint32_t*)esp_at_call)[12]; // eip pushed by CPU
+    uint32_t int_num  = ((uint32_t*)esp_at_call)[8];
+    // uint32_t err_code = ((uint32_t*)esp_at_call)[9];
+    // uint32_t eip_fault= ((uint32_t*)esp_at_call)[10];
 
     volatile unsigned short* vga = (unsigned short*)0xB8000;
     char id_char = ' ';
