@@ -148,6 +148,9 @@ void syscall_handler(void* stack_ptr_raw) { // Le type cpu_state_t* est trompeur
 }
 
 void syscall_init() {
+    volatile unsigned short* video_debug_syscall = (unsigned short*)0xB8000;
+    video_debug_syscall[1] = (video_debug_syscall[1] & 0x00FF) | (0xAF00); // Fond BleuCiel pour 2ème char au début de syscall_init
+
     // Déclarations externes pour print_string/print_hex si elles ne sont pas déjà visibles globalement
     // extern void print_string(const char* str, char color); // Normalement visible via syscall.h -> task.h -> ... -> libc.h
     // extern void print_hex(uint32_t n, char color);       // Idem
