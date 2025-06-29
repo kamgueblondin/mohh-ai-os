@@ -4,6 +4,16 @@ bits 32
 global isr%1
 isr%1:
     cli                ; Disable interrupts
+
+    %if %1 == 3        ; Specific test for ISR3 (Breakpoint)
+        ; VGA direct modification for ISR3 entry test
+        mov edi, 0xB8000
+        mov word [edi + 6*2], 0x1F42 ; 7th char: 'B' (0x42) White on Blue (0x1F)
+    isr3_loop:
+        hlt            ; Halt or loop to prevent further execution for this test
+        jmp isr3_loop
+    %endif
+
     push byte 0        ; Push a dummy error code
     push byte %1       ; Push the interrupt number
     jmp isr_common_stub
