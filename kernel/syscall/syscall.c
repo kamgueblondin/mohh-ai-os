@@ -75,10 +75,21 @@ void syscall_handler(void* stack_ptr_raw) { // Le type cpu_state_t* est trompeur
                     regs[STACK_IDX_EAX] = (uint32_t)-1;
                     break;
                 }
-                keyboard_prepare_for_gets(user_buf, user_buf_size);
+                keyboard_prepare_for_gets(user_buf, user_buf_size); // current_task est assigné à task_waiting_for_input
                 current_task->state = TASK_WAITING_FOR_KEYBOARD;
-                schedule();
-                regs[STACK_IDX_EAX] = keyboard_get_chars_read_count();
+
+                // La valeur de retour sera mise dans current_task->syscall_retval par le driver clavier.
+                // EAX (via regs[STACK_IDX_EAX]) sera mis à jour après le réveil.
+                schedule(); // Change de tâche. current_task peut changer ici.
+                            // La tâche actuelle (celle qui a appelé SYS_GETS) est maintenant endormie.
+                            // Elle ne reprendra son exécution qu'après avoir été réveillée
+                            // et que schedule() l'ait choisie à nouveau.
+                            // Lorsque cela se produit, l'exécution reprend ici dans le contexte du noyau
+                            // pour la tâche d'origine.
+
+                // 'current_task' ici est la tâche qui s'est réveillée et qui est sur le point de retourner au mode utilisateur.
+                // 'regs' pointe toujours vers la zone de pile sauvegardée pour cette tâche (celle qui a initié l'appel).
+                regs[STACK_IDX_EAX] = current_task->syscall_retval;
             }
             break;
 

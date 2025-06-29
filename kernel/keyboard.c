@@ -107,14 +107,18 @@ void keyboard_process_char_for_gets(char ascii) {
 
         print_char(ascii, vga_x, vga_y, current_color); // Écho du retour à la ligne
 
-        // Réveiller la tâche
-        task_waiting_for_input->state = TASK_READY;
-        // Le syscall handler mettra à jour cpu->eax avec num_chars_read_for_gets
+        // Réveiller la tâche et stocker la valeur de retour
+        if (task_waiting_for_input) { // Vérification de sécurité
+            task_waiting_for_input->syscall_retval = num_chars_read_for_gets;
+            task_waiting_for_input->state = TASK_READY;
+        }
 
         // Réinitialiser pour le prochain appel à gets
         task_waiting_for_input = NULL;
         user_target_buffer = NULL;
         kbd_internal_buffer_idx = 0;
+        // num_chars_read_for_gets sera réinitialisé implicitement par la logique de la prochaine lecture
+        // ou n'est plus pertinent une fois la tâche réveillée et la valeur de retour stockée.
 
     } else if (ascii == '\b') { // Backspace
         if (kbd_internal_buffer_idx > 0) {
