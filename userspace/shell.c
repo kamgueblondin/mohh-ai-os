@@ -41,13 +41,16 @@ void main() {
         print("> ");
         gets(input_buffer, 255); // Laisse de la place pour le null terminator
 
-        // input_buffer[strlen(input_buffer)-1] = '\0'; // gets devrait gérer le null terminator,
-                                                      // mais si le noyau met un \n, il faut le retirer.
-                                                      // On va supposer que gets s'en occupe pour l'instant.
-                                                      // Si la saisie est vide ou ne contient que des espaces, on reboucle.
+        // Debug: Afficher ce qui a été reçu par gets()
+        print("\nDEBUG_SHELL: gets() returned. Buffer: [");
+        print(input_buffer);
+        print("]\n");
+
         if (input_buffer[0] == '\0' || is_empty(input_buffer)) {
+            print("DEBUG_SHELL: Input is empty. Continuing.\n");
             continue;
         }
+        print("DEBUG_SHELL: Input is not empty. Proceeding to exec.\n");
 
         // Prépare les arguments pour le programme fake_ai
         argv[0] = "fake_ai.bin"; // Nom du programme à exécuter
