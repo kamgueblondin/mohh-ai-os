@@ -141,6 +141,20 @@ void kmain(uint32_t physical_pd_addr) {
     // Test de l'IDT avec int $3 (Breakpoint)
     // Ce message ne s'affichera que si print_string fonctionne déjà ici.
     // Le vrai test est le changement de couleur VGA dans fault_handler pour int 3.
+
+    // Afficher le contenu de IDT[3] avant de déclencher int $3
+    extern struct idt_entry idt[256]; // Rendre idt (de idt.c) visible ici
+    print_string("KMAIN: Contenu de IDT[3] (pour ISR3) avant int $3:\n", 0x0B);
+    print_string("  base_low:  0x", 0x0B); print_hex(idt[3].base_low, 0x0B); print_string("\n", 0x0B);
+    print_string("  selector:  0x", 0x0B); print_hex(idt[3].selector, 0x0B); print_string("\n", 0x0B);
+    print_string("  always0:   0x", 0x0B); print_hex(idt[3].always0, 0x0B); print_string("\n", 0x0B);
+    print_string("  flags:     0x", 0x0B); print_hex(idt[3].flags, 0x0B); print_string("\n", 0x0B);
+    print_string("  base_high: 0x", 0x0B); print_hex(idt[3].base_high, 0x0B); print_string("\n", 0x0B);
+
+    uint32_t combined_base_isr3 = ((uint32_t)idt[3].base_high << 16) | idt[3].base_low;
+    print_string("  Adresse combinee ISR3: 0x", 0x0B); print_hex(combined_base_isr3, 0x0B); print_string("\n", 0x0B);
+
+
     print_string("KMAIN: Declenchement de int $3 pour tester l'IDT...\n", 0x0B); // Cyan
     asm volatile("int $3");
     // Si le handler pour int $3 fonctionne et fait hlt, on ne devrait pas voir le message suivant.
