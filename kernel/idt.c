@@ -19,6 +19,9 @@ void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
 
 // Initialise l'IDT entière
 void idt_init() {
+    volatile unsigned short* video_debug_idt = (unsigned short*)0xB8000;
+    video_debug_idt[0] = (video_debug_idt[0] & 0x00FF) | (0xCF00); // Fond RougeVif au début de idt_init
+
     extern void print_string(const char* str, char color); // Pour le débogage
     extern void print_hex(uint32_t n, char color); // Pour le débogage
 
