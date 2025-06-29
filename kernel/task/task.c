@@ -42,8 +42,9 @@ void tasking_init() {
     current_task->cpu_state.eip = 0;
     current_task->cpu_state.esp = 0;
     current_task->cpu_state.ebp = 0;
-    // eflags pour la tâche initiale du noyau (idle task). IF = 0 pour l'instant.
-    current_task->cpu_state.eflags = 0x00000002; // Bit 1 est toujours 1.
+    // eflags pour la tâche initiale du noyau (idle task).
+    // Mettre IF=1 (0x200) + bit 1 (0x2) = 0x202
+    current_task->cpu_state.eflags = 0x00000202;
     current_task->next = (struct task*)current_task;
     current_task->parent = NULL;
     current_task->child_pid_waiting_on = 0;
