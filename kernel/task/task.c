@@ -336,9 +336,14 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
 
 
 void schedule() {
+    volatile unsigned short* video_debug_schedule = (unsigned short*)0xB8000;
+    video_debug_schedule[10*80 + 0] = (video_debug_schedule[10*80 + 0] & 0x00FF) | (0x1F00); // Ligne 10, Char 0, Fond Bleu
+
     if (!current_task) {
-        return; // Pas de tâche à scheduler
+        video_debug_schedule[10*80 + 1] = 'N'; // No current task
+        return;
     }
+    video_debug_schedule[10*80 + 1] = 'E'; // Entered schedule
 
     task_t* prev_task = (task_t*)current_task;
     task_t* next_candidate = (task_t*)current_task->next;
@@ -423,6 +428,9 @@ void schedule() {
         asm volatile("cli; hlt");
         return;
     }
-
+    video_debug_schedule[10*80 + 2] = 'C'; // Calling Context Switch
     context_switch(&prev_task->cpu_state, (cpu_state_t*)&current_task->cpu_state);
+    // Normalement, context_switch ne retourne pas ici pour prev_task.
+    // Il retourne pour la tâche qui est switchée "in".
+    video_debug_schedule[10*80 + 3] = 'R'; // Returned from context_switch (ne devrait pas être pour la même invocation)
 }
