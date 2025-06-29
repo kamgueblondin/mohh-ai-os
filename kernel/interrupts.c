@@ -228,13 +228,28 @@ void irq_handler_c(void* esp_at_call) {
 
 // Initialise le PIC et configure les entrées IDT pour les ISRs et IRQs.
 void interrupts_init() {
+    volatile unsigned short* video_debug_irq_init = (unsigned short*)0xB8000;
+    video_debug_irq_init[5] = (video_debug_irq_init[5] & 0x00FF) | (0x6F00); // 6th char, Fond Marron, Texte BlancBrillant
+
+    extern void print_string(const char* str, char color); // Assurer la visibilité pour print_string/print_hex
+    extern void print_hex(uint32_t n, char color);
+    extern void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags); // Déjà dans idt.h, mais pour être sûr
+    extern void isr3(); // Assurer la visibilité de l'adresse de isr3
+
+    print_string("DEBUG_IRQ_INIT: Entered.\n", 0x0A); // Vert
+
     pic_remap(0x20, 0x28); // IRQs 0-7 à 0x20-0x27 (32-39), IRQs 8-15 à 0x28-0x2F (40-47)
+    print_string("DEBUG_IRQ_INIT: PIC remapped.\n", 0x0A);
 
     // Configuration des ISRs (Exceptions CPU)
     idt_set_gate(0, (uint32_t)isr0, 0x08, 0x8E);
     idt_set_gate(1, (uint32_t)isr1, 0x08, 0x8E);
     idt_set_gate(2, (uint32_t)isr2, 0x08, 0x8E);
-    idt_set_gate(3, (uint32_t)isr3, 0x08, 0x8E);
+
+    uint32_t addr_isr3 = (uint32_t)isr3;
+    idt_set_gate(3, addr_isr3, 0x08, 0x8E);
+    print_string("DEBUG_IRQ_INIT: ISR3 set in IDT. Addr: ", 0x0A); print_hex(addr_isr3, 0x0A); print_string("\n", 0x0A);
+
     idt_set_gate(4, (uint32_t)isr4, 0x08, 0x8E);
     idt_set_gate(5, (uint32_t)isr5, 0x08, 0x8E);
     idt_set_gate(6, (uint32_t)isr6, 0x08, 0x8E);
