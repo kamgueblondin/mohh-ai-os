@@ -137,8 +137,20 @@ void kmain(uint32_t physical_pd_addr) {
     // Initialiser les interruptions et les appels système
     idt_init();
     interrupts_init();  // Configure le PIC, active les IRQ de base
+
+    // Test de l'IDT avec int $3 (Breakpoint)
+    // Ce message ne s'affichera que si print_string fonctionne déjà ici.
+    // Le vrai test est le changement de couleur VGA dans fault_handler pour int 3.
+    print_string("KMAIN: Declenchement de int $3 pour tester l'IDT...\n", 0x0B); // Cyan
+    asm volatile("int $3");
+    // Si le handler pour int $3 fonctionne et fait hlt, on ne devrait pas voir le message suivant.
+    // S'il fait juste un changement de couleur et iret, on le verra.
+    // Notre fault_handler actuel fait hlt.
+    print_string("KMAIN: Retour de int $3 (si iret a ete utilise et non hlt).\n", 0x0B);
+
+
     syscall_init();     // Enregistre le handler pour int 0x80
-    print_string("IDT, PIC et Syscalls initialises.\n", current_color);
+    print_string("IDT, PIC et Syscalls initialises.\n", current_color); // Ce message pourrait ne pas être atteint si int $3 fait hlt
 
     // Initialiser le multitâche
     tasking_init(); // Crée la tâche noyau initiale (idle task)
