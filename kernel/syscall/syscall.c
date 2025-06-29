@@ -2,6 +2,7 @@
 #include "kernel/idt.h"        // Pour idt_set_gate et la définition de cpu_state_t (via interrupts.h)
 #include "kernel/task/task.h"  // Pour current_task, TASK_TERMINATED, TASK_WAITING_FOR_KEYBOARD, schedule(), cpu_state_t
 #include "kernel/keyboard.h"   // Pour keyboard_prepare_for_gets, keyboard_get_chars_read_count
+#include "kernel/libc.h"       // Pour print_string, print_hex, etc.
 #include <stdint.h>
 #include <stddef.h>     // Pour NULL
 
@@ -45,10 +46,6 @@ void syscall_handler(void* stack_ptr_raw) { // Le type cpu_state_t* est trompeur
     // video_mem_test[0] = (video_mem_test[0] & 0x00FF) | (0x4F00); // Fond Rouge, Caractère inchangé
 
     uint32_t* regs = (uint32_t*)stack_ptr_raw;
-
-    // Déclarations pour print_string/print_hex au cas où elles seraient nécessaires avant le switch
-    extern void print_string(const char* str, char color);
-    extern void print_hex(uint32_t n, char color);
 
     // Imprimer un message dès l'entrée pour confirmer l'appel et l'état de current_task
     // Utiliser une couleur distincte, par exemple magenta sur noir (0x05)
@@ -94,9 +91,7 @@ void syscall_handler(void* stack_ptr_raw) { // Le type cpu_state_t* est trompeur
             {
                 char* user_buf = (char*)regs[STACK_IDX_EBX];
                 uint32_t user_buf_size = regs[STACK_IDX_ECX];
-                // Utiliser print_string et print_hex qui sont dans libc et kernel.c
-                extern void print_string(const char* str, char color);
-                extern void print_hex(uint32_t n, char color);
+                // print_string et print_hex sont maintenant inclus via libc.h
 
                 print_string("DEBUG_SYS_GETS: Entered. Task ID: ", 0x0F); print_hex(current_task->id, 0x0F);
                 print_string(", user_buf: ", 0x0F); print_hex((uint32_t)user_buf, 0x0F);
