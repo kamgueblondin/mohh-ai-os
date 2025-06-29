@@ -131,8 +131,8 @@ userspace_build:
 
 # Cible pour exécuter l'OS dans QEMU
 run: $(OS_IMAGE)
-	# Lancer QEMU avec le noyau, sans affichage graphique, serial multiplexé, verbose debug, no network
-	qemu-system-i386 -kernel $(OS_IMAGE) -serial mon:stdio -nographic -d int,cpu_reset,guest_errors -no-reboot -no-shutdown -net none
+	# Lancer QEMU avec le noyau, avec affichage graphique, serial multiplexé, verbose debug, no network
+	qemu-system-i386 -kernel $(OS_IMAGE) -serial mon:stdio -d int,cpu_reset,guest_errors -no-reboot -no-shutdown -net none
 
 # Cible pour nettoyer le projet
 clean:
