@@ -136,7 +136,19 @@ void fault_handler(void* esp_at_call) {
     // Commented out clear screen to ensure our VGA debug markers are not erased if fault occurs very early.
     // vga_x = 0; vga_y = 0; // Reset internal cursor for print_char if it were used
 
-    if (int_num == 13) { // General Protection Fault
+    if (int_num == 3) { // Breakpoint Exception
+        id_char = 'B'; // For Breakpoint
+        vga[4] = (unsigned short)'B' | (0xE000); // 5th char, 'B' Jaune sur Fond Noir (E=Jaune, 0=Noir)
+                                                 // On écrase le caractère et la couleur.
+        // On pourrait aussi juste changer le fond: vga[4] = (vga[4] & 0x00FF) | (0xE000);
+        // Pas besoin d'afficher "BPF" etc. pour ce test, le changement de couleur suffit.
+        // On va quand même afficher quelque chose pour être sûr.
+        vga[0] = (unsigned short)id_char | (0x0E << 8); // Jaune sur Noir
+        vga[1] = (unsigned short)'P' | (0x0E << 8);
+        vga[2] = (unsigned short)' ' | (0x0E << 8);
+
+
+    } else if (int_num == 13) { // General Protection Fault
         id_char = 'G'; // For GPF
         vga[3] = (vga[3] & 0x00FF) | (0x5F00); // 4th char, Fond Magenta, Texte BlancBrillant 'G'
         vga[0] = (unsigned short)id_char | (0x0C << 8);
