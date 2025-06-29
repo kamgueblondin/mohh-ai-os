@@ -70,15 +70,32 @@ void syscall_handler(void* stack_ptr_raw) { // Le type cpu_state_t* est trompeur
             {
                 char* user_buf = (char*)regs[STACK_IDX_EBX];
                 uint32_t user_buf_size = regs[STACK_IDX_ECX];
+                // Utiliser print_string et print_hex qui sont dans libc et kernel.c
+                extern void print_string(const char* str, char color);
+                extern void print_hex(uint32_t n, char color);
+
+                print_string("DEBUG_SYS_GETS: Entered. Task ID: ", 0x0F); print_hex(current_task->id, 0x0F);
+                print_string(", user_buf: ", 0x0F); print_hex((uint32_t)user_buf, 0x0F);
+                print_string(", user_buf_size: ", 0x0F); print_hex(user_buf_size, 0x0F); print_string("\n", 0x0F);
 
                 if (user_buf == NULL || user_buf_size == 0) {
+                    print_string("DEBUG_SYS_GETS: Invalid buffer or size. Returning -1.\n", 0x0F);
                     regs[STACK_IDX_EAX] = (uint32_t)-1;
                     break;
                 }
-                keyboard_prepare_for_gets(user_buf, user_buf_size);
+                keyboard_prepare_for_gets(user_buf, user_buf_size); // current_task est assigné à task_waiting_for_input
                 current_task->state = TASK_WAITING_FOR_KEYBOARD;
+                print_string("DEBUG_SYS_GETS: Task ID ", 0x0F); print_hex(current_task->id, 0x0F); print_string(" state set to WAITING_FOR_KEYBOARD. Calling schedule().\n", 0x0F);
+
                 schedule();
-                regs[STACK_IDX_EAX] = keyboard_get_chars_read_count();
+
+                // Après schedule(), current_task est la tâche qui vient d'être réveillée ou sélectionnée.
+                // Si c'est la tâche qui a appelé SYS_GETS (et qui s'est réveillée), son current_task->syscall_retval est pertinent.
+                print_string("DEBUG_SYS_GETS: Returned from schedule(). Current (awakened/switched) Task ID: ", 0x0F); print_hex(current_task->id, 0x0F);
+                print_string(". syscall_retval for this task: ", 0x0F); print_hex(current_task->syscall_retval, 0x0F); print_string("\n", 0x0F);
+
+                regs[STACK_IDX_EAX] = current_task->syscall_retval; // regs est toujours la pile de la tâche qui a initié le syscall
+                print_string("DEBUG_SYS_GETS: Set EAX (for original calling task) to syscall_retval. Exiting syscall.\n", 0x0F);
             }
             break;
 
