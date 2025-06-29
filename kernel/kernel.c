@@ -3,7 +3,7 @@
 #include "keyboard.h"
 #include "mem/pmm.h"
 #include "mem/vmm.h"
-#include "fs/initrd.h"
+// #include "fs/initrd.h" // Plus utilisé, les applications sont embarquées
 #include "task/task.h"
 #include "timer.h"
 #include "syscall/syscall.h" // Pour syscall_init()
@@ -129,17 +129,10 @@ void kmain(uint32_t physical_pd_addr) {
     vmm_init(); // Active le paging
     print_string("Gestionnaires PMM et VMM initialises.\n", current_color);
 
-    // Initialiser l'initrd
-    // TODO: Obtenir initrd_location depuis Multiboot
-    uint32_t initrd_location = 0x200000; // Adresse codée en dur pour l'instant
-    if (initrd_location != 0) {
-        initrd_init(initrd_location);
-        print_string("Initrd initialise. Contenu:\n", current_color);
-        initrd_list_files(); // Optionnel: lister les fichiers pour le debug
-    } else {
-        print_string("Initrd non trouve. Arret.\n", 0x0C);
-        while(1) asm volatile("cli; hlt");
-    }
+    // L'initialisation de l'initrd n'est plus nécessaire ici car les applications
+    // sont directement intégrées dans l'image du noyau.
+    // Les messages relatifs à initrd_init et initrd_list_files sont supprimés.
+    print_string("Applications utilisateur embarquees.\n", current_color);
 
     // Initialiser les interruptions et les appels système
     idt_init();

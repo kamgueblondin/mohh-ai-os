@@ -43,4 +43,18 @@ SECTIONS
         *(.eh_frame) /* Informations pour la gestion des exceptions C++ (non utilisées ici) */
         *(.note.GNU-stack) /* Section de note pour la pile, ne doit pas être chargée */
     }
+
+    /* Section pour les applications utilisateur embarquées */
+    .user_apps : ALIGN(4K)
+    {
+        _shell_bin_start = .;
+        *(.data.shell_bin) /* Section de userspace/shell_bin.o */
+        _shell_bin_end = .;
+        PROVIDE(_shell_bin_size = _shell_bin_end - _shell_bin_start);
+
+        _fake_ai_bin_start = .;
+        *(.data.fake_ai_bin) /* Section de userspace/fake_ai_bin.o */
+        _fake_ai_bin_end = .;
+        PROVIDE(_fake_ai_bin_size = _fake_ai_bin_end - _fake_ai_bin_start);
+    } :data /* Placer cette section dans le segment 'data' (RW) */
 }

@@ -15,14 +15,34 @@ ASFLAGS = -f elf32
 OS_IMAGE = build/ai_os.bin
 ISO_IMAGE = release/mohh-ai-os.iso
 
-# Liste des fichiers objets
-OBJECTS = build/boot.o build/idt_loader.o build/isr_stubs.o build/paging.o build/context_switch.o \
-          build/kernel.o build/idt.o build/interrupts.o build/keyboard.o \
-          build/pmm.o build/vmm.o build/initrd.o build/libc.o \
-          build/task.o build/timer.o build/syscall.o build/elf.o build/syscall_handler.o
+# Liste des fichiers objets du noyau
+KERNEL_OBJECTS = build/boot.o build/idt_loader.o build/isr_stubs.o build/paging.o build/context_switch.o \
+                 build/kernel.o build/idt.o build/interrupts.o build/keyboard.o \
+                 build/pmm.o build/vmm.o build/libc.o \
+                 build/task.o build/timer.o build/syscall.o build/elf.o build/syscall_handler.o
+
+# Fichiers objets de l'espace utilisateur (convertis à partir des binaires)
+USERSPACE_OBJECTS = build/userspace/shell_bin.o build/userspace/fake_ai_bin.o
+
+# Tous les objets à lier
+OBJECTS = $(KERNEL_OBJECTS) $(USERSPACE_OBJECTS)
 
 # Cible par défaut : construire l'image de l'OS
 all: $(OS_IMAGE)
+
+# Règles pour les objets de l'espace utilisateur copiés
+build/userspace/shell_bin.o: userspace/shell_bin.o
+	@mkdir -p $(dir $@)
+	@cp $< $@
+
+build/userspace/fake_ai_bin.o: userspace/fake_ai_bin.o
+	@mkdir -p $(dir $@)
+	@cp $< $@
+
+# S'assurer que les binaires de l'espace utilisateur sont construits avant de tenter de les copier
+userspace/shell_bin.o: userspace_build
+userspace/fake_ai_bin.o: userspace_build
+
 
 # Règle pour lier les fichiers objets et créer l'image finale
 $(OS_IMAGE): $(OBJECTS)
@@ -38,7 +58,7 @@ build/%.o: kernel/%.c
 # Dépendances spécifiques et règles pour les fichiers .c
 # (La règle générique ci-dessus pourrait les gérer si les .h sont au même niveau ou via -I.)
 # Mais pour être explicite :
-build/kernel.o: kernel/kernel.c kernel/idt.h kernel/interrupts.h kernel/keyboard.h kernel/mem/pmm.h kernel/mem/vmm.h fs/initrd.h
+build/kernel.o: kernel/kernel.c kernel/idt.h kernel/interrupts.h kernel/keyboard.h kernel/mem/pmm.h kernel/mem/vmm.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o $@
 
@@ -62,11 +82,6 @@ build/pmm.o: kernel/mem/pmm.c kernel/mem/pmm.h
 build/vmm.o: kernel/mem/vmm.c kernel/mem/vmm.h kernel/mem/pmm.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c kernel/mem/vmm.c -o $@
-
-# Règle pour les fichiers dans fs/
-build/initrd.o: fs/initrd.c fs/initrd.h
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c fs/initrd.c -o $@
 
 # Règles de compilation pour les fichiers assembleur .s
 build/boot.o: boot/boot.s
@@ -114,21 +129,18 @@ build/elf.o: kernel/elf.c kernel/elf.h kernel/mem/vmm.h kernel/mem/pmm.h
 userspace_build:
 	$(MAKE) -C userspace
 
-# Cible pour créer l'initrd
-initrd: userspace_build
-	@echo "Creation de my_initrd.tar avec shell.bin et fake_ai.bin..."
-	tar -cf my_initrd.tar -C userspace shell.bin fake_ai.bin
-	@echo "my_initrd.tar cree."
-
 # Cible pour exécuter l'OS dans QEMU
-run: $(OS_IMAGE) initrd
-	# Lancer QEMU avec le noyau ET l'initrd, avec affichage graphique, serial multiplexé, verbose debug, no network
-	qemu-system-i386 -kernel $(OS_IMAGE) -initrd my_initrd.tar -serial mon:stdio -d int,cpu_reset,guest_errors -no-reboot -no-shutdown -net none
+run: $(OS_IMAGE)
+	# Lancer QEMU avec le noyau, sans affichage graphique, serial multiplexé, verbose debug, no network
+	qemu-system-i386 -kernel $(OS_IMAGE) -serial mon:stdio -nographic -d int,cpu_reset,guest_errors -no-reboot -no-shutdown -net none
 
 # Cible pour nettoyer le projet
 clean:
 	rm -rf build my_initrd.tar release iso_root
 	$(MAKE) -C userspace clean
+	# Nettoyer aussi les objets utilisateur copiés
+	rm -f build/userspace/shell_bin.o build/userspace/fake_ai_bin.o
+
 
 # Cible pour créer l'image ISO bootable
 iso: $(OS_IMAGE)
