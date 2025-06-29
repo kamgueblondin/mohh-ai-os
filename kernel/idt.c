@@ -43,4 +43,17 @@ void idt_init() {
     print_string("DEBUG_IDT_INIT: Calling idt_load(&idtp).\n", 0x0D);
     idt_load(&idtp); // Pass the address of idtp
     print_string("DEBUG_IDT_INIT: Returned from idt_load(). IDT should be active.\n", 0x0D);
+
+    // Vérifier la valeur de IDTR avec SIDT
+    struct idt_ptr current_idtr;
+    asm volatile ("sidt %0" : "=m"(current_idtr));
+    print_string("DEBUG_IDT_INIT: SIDT check: current_idtr.limit=", 0x0D); print_hex(current_idtr.limit, 0x0D);
+    print_string(", current_idtr.base=", 0x0D); print_hex(current_idtr.base, 0x0D); print_string("\n", 0x0D);
+
+    if (current_idtr.limit == idtp.limit && current_idtr.base == idtp.base) {
+        print_string("DEBUG_IDT_INIT: SIDT matches idtp. LIDT successful.\n", 0x0A); // Vert
+    } else {
+        print_string("DEBUG_IDT_INIT: SIDT MISMATCH! LIDT may have failed or IDTR changed.\n", 0x0C); // Rouge
+        print_string("  Expected limit: ", 0x0C); print_hex(idtp.limit, 0x0C); print_string(", base: ", 0x0C); print_hex(idtp.base, 0x0C); print_string("\n", 0x0C);
+    }
 }
