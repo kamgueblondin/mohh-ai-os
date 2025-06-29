@@ -95,48 +95,102 @@ void initrd_list_files() {
 }
 
 char* initrd_read_file(const char* filename, uint32_t* file_size_out) {
+    // Utiliser une couleur de débogage distincte
+    char dbg_color = 0x0D; // Magenta sur noir
+
+    print_string("DEBUG_IRF: initrd_read_file called for: ", dbg_color); print_string(filename ? filename : "NULL", dbg_color); print_string("\n", dbg_color);
+    print_string("DEBUG_IRF: initrd_start_addr = ", dbg_color); print_hex((uint32_t)initrd_start_addr, dbg_color); print_string("\n", dbg_color);
+
     if (!initrd_start_addr || !filename) {
+        print_string("DEBUG_IRF: Early exit - initrd_start_addr or filename is NULL.\n", dbg_color);
         if(file_size_out) *file_size_out = 0;
         return NULL;
     }
-    // La vérification if (!strcmp) a été supprimée car elle était incorrecte.
-    // strcmp est déclaré extern et est supposé être toujours disponible.
 
     tar_header_t* current_header = initrd_start_addr;
     uint32_t offset = 0;
+    int file_idx = 0;
 
     while (1) {
         current_header = (tar_header_t*)((char*)initrd_start_addr + offset);
 
-        if (current_header->name[0] == '\0') break;
-        if (current_header->magic[0] != 'u' || current_header->magic[5] != '\0') break; // Simplifié
+        print_string("DEBUG_IRF: Entry ", dbg_color); print_hex(file_idx, dbg_color); print_string(" at offset ", dbg_color); print_hex(offset, dbg_color); print_string("\n", dbg_color);
 
-        if (strcmp(current_header->name, filename) == 0) {
-            // Fichier trouvé
-            if (current_header->typeflag == TAR_TYPEFLAG_NORMAL_FILE || current_header->typeflag == '\0') {
+        // Afficher les premiers caractères du nom (attention, name n'est pas forcément terminé par NUL dans les 100 chars)
+        char name_buf[101];
+        for(int k=0; k<100; ++k) name_buf[k] = current_header->name[k];
+        name_buf[100] = '\0';
+        print_string("DEBUG_IRF: Header Name: \"", dbg_color); print_string(name_buf, dbg_color); print_string("\"\n", dbg_color);
+
+        // Afficher le champ magic
+        char magic_buf[7];
+        for(int k=0; k<6; ++k) magic_buf[k] = current_header->magic[k];
+        magic_buf[6] = '\0';
+        print_string("DEBUG_IRF: Header Magic: \"", dbg_color); print_string(magic_buf, dbg_color); print_string("\"\n", dbg_color);
+        print_string("DEBUG_IRF: Header Typeflag: ", dbg_color); print_hex(current_header->typeflag, dbg_color); print_string("\n", dbg_color);
+
+
+        if (current_header->name[0] == '\0') {
+            print_string("DEBUG_IRF: End of archive (name[0] is NUL).\n", dbg_color);
+            break;
+        }
+        // Vérification plus robuste du magic "ustar" et de la version "00"
+        if (current_header->magic[0] != 'u' || current_header->magic[1] != 's' ||
+            current_header->magic[2] != 't' || current_header->magic[3] != 'a' ||
+            current_header->magic[4] != 'r' || current_header->magic[5] != '\0' /* POSIX USTAR magic */ ) {
+            // Gnu tar met "ustar  \0" (notez les deux espaces) pour version " \0"
+            // Si version est "00", magic est "ustar\0"
+            // On va être un peu plus permissif sur magic[5] si version est "00"
+            if (!(current_header->magic[5] == ' ' && current_header->version[0] == ' ' && current_header->version[1] == ' ') &&
+                !(current_header->magic[5] == '\0' && current_header->version[0] == '0' && current_header->version[1] == '0')) {
+                 print_string("DEBUG_IRF: Invalid TAR magic or version. Magic: '", dbg_color);
+                 print_string(magic_buf, dbg_color); 
+                 print_string("', Version: '", dbg_color); 
+                 char version_buf[3]; version_buf[0]=current_header->version[0]; version_buf[1]=current_header->version[1]; version_buf[2]='\0';
+                 print_string(version_buf, dbg_color);
+                 print_string("'. Breaking loop.\n", dbg_color);
+                 break;
+            }
+        }
+        
+        int cmp_result = strcmp(current_header->name, filename);
+        print_string("DEBUG_IRF: strcmp(\"", dbg_color); print_string(current_header->name, dbg_color); print_string("\", \"", dbg_color); print_string(filename, dbg_color); print_string("\") = ", dbg_color); print_hex(cmp_result, dbg_color); print_string("\n", dbg_color);
+
+        if (cmp_result == 0) {
+            print_string("DEBUG_IRF: File \"", dbg_color); print_string(filename, dbg_color); print_string("\" found by strcmp!\n", dbg_color);
+            if (current_header->typeflag == TAR_TYPEFLAG_NORMAL_FILE || current_header->typeflag == '\0' || current_header->typeflag == '0') {
+                print_string("DEBUG_IRF: Typeflag is normal file ('", dbg_color); print_hex(current_header->typeflag, dbg_color); print_string("'). Reading file.\n", dbg_color);
                 uint32_t size = octal_to_uint(current_header->size, 11);
                 if (file_size_out) {
                     *file_size_out = size;
                 }
-                // Le contenu du fichier est juste après le header (512 octets)
+                print_string("DEBUG_IRF: File size: ", dbg_color); print_hex(size, dbg_color); print_string("\n", dbg_color);
                 return (char*)current_header + 512;
-            } else { // Ce n'est pas un fichier normal
+            } else {
+                print_string("DEBUG_IRF: File found, but typeflag is not normal: ", dbg_color); print_hex(current_header->typeflag, dbg_color); print_string(". Returning NULL.\n", dbg_color);
                 if (file_size_out) *file_size_out = 0;
                 return NULL;
             }
         }
 
         uint32_t size = octal_to_uint(current_header->size, 11);
-        offset += 512;
+        offset += 512; // Header block
         if (size > 0) {
-            offset += (size + 511) & ~511;
+            offset += (size + 511) & ~511; // Data blocks, rounded up to 512 boundary
         }
-        if (offset > 10 * 1024 * 1024) break; // Sécurité
+        
+        file_idx++;
+        if (offset > 10 * 1024 * 1024) { // Safety break
+            print_string("DEBUG_IRF: Offset exceeded safety limit. Breaking.\n", dbg_color);
+            break; 
+        }
     }
 
+    print_string("DEBUG_IRF: File not found or error in archive. Filename: ", dbg_color); print_string(filename, dbg_color); print_string("\n", dbg_color);
     if (file_size_out) *file_size_out = 0;
     return NULL; // Fichier non trouvé
 }
 
 // strcmp est déclaré extern et défini dans kernel.c (ou un fichier utilitaire).
+// La garde KERNEL_STRCMP_DEFINED est dans kernel.c.
 // La garde KERNEL_STRCMP_DEFINED est dans kernel.c.
