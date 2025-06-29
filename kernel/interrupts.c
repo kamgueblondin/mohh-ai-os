@@ -130,12 +130,29 @@ void fault_handler(void* esp_at_call) {
     char id_char = ' ';
 
     // Clear a portion of the screen first to make messages visible
-    for (int i = 0; i < 80 * 2; ++i) { // Clear top 2 lines
-        vga[i] = (unsigned short)' ' | (0x0F << 8); // White on Black
-    }
-    vga_x = 0; vga_y = 0; // Reset internal cursor for print_char if it were used
+    // for (int i = 0; i < 80 * 2; ++i) { // Clear top 2 lines
+    //     vga[i] = (unsigned short)' ' | (0x0F << 8); // White on Black
+    // }
+    // Commented out clear screen to ensure our VGA debug markers are not erased if fault occurs very early.
+    // vga_x = 0; vga_y = 0; // Reset internal cursor for print_char if it were used
 
-    if (int_num == 14) { // Page Fault
+    if (int_num == 13) { // General Protection Fault
+        id_char = 'G'; // For GPF
+        vga[3] = (vga[3] & 0x00FF) | (0x5F00); // 4th char, Fond Magenta, Texte BlancBrillant 'G'
+        vga[0] = (unsigned short)id_char | (0x0C << 8);
+        vga[1] = (unsigned short)'P' | (0x0C << 8);
+        vga[2] = (unsigned short)'F' | (0x0C << 8);
+         uint32_t err_code_gpf = ((uint32_t*)esp_at_call)[11]; // err_code for GPF
+         // Display error code for GPF
+        vga[80*1 + 0] = 'E'; vga[80*1 + 1] = 'R'; vga[80*1 + 2] = 'C'; vga[80*1 + 3] = '=';
+        for (int i = 0; i < 8; i++) {
+            char hexdigit = (err_code_gpf >> ((7-i)*4)) & 0xF;
+            if (hexdigit < 10) hexdigit += '0';
+            else hexdigit += 'A' - 10;
+            vga[80*1 + 4 + i] = (unsigned short)hexdigit | (0x0C << 8);
+        }
+
+    } else if (int_num == 14) { // Page Fault
         id_char = 'P';
         uint32_t faulting_address;
         asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
