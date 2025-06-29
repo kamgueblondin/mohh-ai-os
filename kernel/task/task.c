@@ -116,9 +116,12 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
 
     // Déclarations pour les symboles du linker pour les binaires embarqués
     extern uint8_t _shell_bin_start[];
-    extern uint32_t _shell_bin_size;
+    extern uint8_t _shell_bin_end[]; // Nouveau
+    // extern uint32_t _shell_bin_size; // Supprimé
+
     extern uint8_t _fake_ai_bin_start[];
-    extern uint32_t _fake_ai_bin_size;
+    extern uint8_t _fake_ai_bin_end[]; // Nouveau
+    // extern uint32_t _fake_ai_bin_size; // Supprimé
 
     print_string("DEBUG_CUP: Entered create_user_process for: ", debug_color); print_string(path_in_initrd, debug_color); print_string("\n", debug_color);
 
@@ -130,12 +133,12 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
     // Comparer path_in_initrd pour déterminer quel binaire charger
     if (strcmp(path_in_initrd, "shell.bin") == 0) {
         elf_data = _shell_bin_start;
-        elf_file_size = _shell_bin_size;
-        print_string("DEBUG_CUP: Loading embedded shell.bin. Addr: ", debug_color); print_hex((uint32_t)elf_data, debug_color); print_string(", Size: ", debug_color); print_hex(elf_file_size, debug_color); print_string("\n", debug_color);
+        elf_file_size = (uint32_t)(_shell_bin_end - _shell_bin_start);
+        print_string("DEBUG_CUP: Loading embedded shell.bin. Addr: ", debug_color); print_hex((uint32_t)elf_data, debug_color); print_string(", Size (calc): ", debug_color); print_hex(elf_file_size, debug_color); print_string("\n", debug_color);
     } else if (strcmp(path_in_initrd, "fake_ai.bin") == 0) {
         elf_data = _fake_ai_bin_start;
-        elf_file_size = _fake_ai_bin_size;
-        print_string("DEBUG_CUP: Loading embedded fake_ai.bin. Addr: ", debug_color); print_hex((uint32_t)elf_data, debug_color); print_string(", Size: ", debug_color); print_hex(elf_file_size, debug_color); print_string("\n", debug_color);
+        elf_file_size = (uint32_t)(_fake_ai_bin_end - _fake_ai_bin_start);
+        print_string("DEBUG_CUP: Loading embedded fake_ai.bin. Addr: ", debug_color); print_hex((uint32_t)elf_data, debug_color); print_string(", Size (calc): ", debug_color); print_hex(elf_file_size, debug_color); print_string("\n", debug_color);
     } else {
         print_string("DEBUG_CUP: Unknown application requested: ", 0x0C); print_string(path_in_initrd, 0x0C); print_string("\n", 0x0C);
         asm volatile("sti");
