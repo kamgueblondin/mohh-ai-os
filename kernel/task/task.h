@@ -30,7 +30,6 @@ typedef struct task {
     struct task* parent;        // Tâche parente (celle qui a appelé exec)
     int child_pid_waiting_on; // PID de l'enfant que cette tâche attend (si elle est parent)
     int child_exit_status;    // Statut de sortie de l'enfant attendu
-    uint32_t syscall_retval;  // Valeur de retour générique pour les syscalls bloquants
 
     // Informations pour le démarrage d'un processus utilisateur
     // Ces champs pourraient être dans une structure séparée si task_t devient trop gros.
