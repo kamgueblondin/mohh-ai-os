@@ -36,6 +36,9 @@ typedef struct task {
     int argc;
     char** argv_user_stack_ptr; // Pointeur vers argv sur la pile de l'utilisateur
 
+    // Pour la valeur de retour des syscalls bloquants
+    uint32_t syscall_retval;
+
     // Plus tard: page_directory_t* page_directory; // Propre à chaque tâche
 } task_t;
 

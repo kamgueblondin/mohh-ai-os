@@ -4,34 +4,9 @@ bits 32
 global isr%1
 isr%1:
     cli                ; Disable interrupts
-
-    %if %1 == 3        ; Specific test for ISR3 (Breakpoint) to test pushes
-        ; Marqueur VGA 1 (avant tout push)
-        mov edi, 0xB8000
-        mov word [edi + 9*2], 0x1F58 ; 10th char: 'X' White on Blue (0x1F)
-
-        push byte 0        ; Push a dummy error code
-
-        ; Marqueur VGA 2 (après push 0)
-        mov edi, 0xB8000
-        mov word [edi + 10*2], 0x1F59 ; 11th char: 'Y' White on Blue (0x1F)
-
-        push byte %1       ; Push the interrupt number (qui sera 3)
-
-        ; Marqueur VGA 3 (après push 3)
-        mov edi, 0xB8000
-        mov word [edi + 11*2], 0x1F5A ; 12th char: 'Z' White on Blue (0x1F)
-
-    isr3_push_test_loop:
-        hlt
-        jmp isr3_push_test_loop
-        ; jmp isr_common_stub ; Commenté pour ce test
-    %else
-        ; Chemin normal pour les autres ISRs sans code d'erreur
-        push byte 0
-        push byte %1
-        jmp isr_common_stub
-    %endif
+    push byte 0        ; Push a dummy error code
+    push byte %1       ; Push the interrupt number
+    jmp isr_common_stub
 %endmacro
 
 %macro ISR_ERRCODE 1   ; Macro for ISRs with error codes
@@ -54,35 +29,25 @@ irq%1:
 
 ; Common stub for ISRs (CPU exceptions)
 isr_common_stub:
-    ; Étape A: Reconfirmation que isr_common_stub est atteignable
-    ; avec isr3 utilisant le chemin standard (push 0, push 3, jmp isr_common_stub)
-    mov edi, 0xB8000
-    mov word [edi + 7*2], 0x2F43 ; 8th char: 'C' (0x43) White on Green (0x2F)
+    pusha              ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
+    mov ax, ds         ; Lower 16-bits of eax = ds.
+    push eax           ; save the data segment descriptor
+    mov ax, 0x10       ; load the kernel data segment descriptor
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
 
-reconfirm_stub_loop:
-    hlt
-    jmp reconfirm_stub_loop
+    call fault_handler ; Call C handler
 
-    ; Code original commenté pour ce test:
-    ; pusha              ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
-    ; mov ax, ds         ; Lower 16-bits of eax = ds.
-    ; push eax           ; save the data segment descriptor
-    ; mov ax, 0x10       ; load the kernel data segment descriptor
-    ; mov ds, ax
-    ; mov es, ax
-    ; mov fs, ax
-    ; mov gs, ax
-    ;
-    ; call fault_handler ; Call C handler
-    ;
-    ; pop ebx            ; reload the original data segment descriptor
-    ; mov ds, bx
-    ; mov es, bx
-    ; mov fs, bx
-    ; mov gs, bx
-    ; popa               ; Pops edi,esi,ebp...
-    ; add esp, 8         ; Cleans up the pushed error code and pushed ISR number
-    ; iret               ; pops 5 things at once: CS, EIP, EFLAGS, SS, ESP
+    pop ebx            ; reload the original data segment descriptor
+    mov ds, bx
+    mov es, bx
+    mov fs, bx
+    mov gs, bx
+    popa               ; Pops edi,esi,ebp...
+    add esp, 8         ; Cleans up the pushed error code and pushed ISR number
+    iret               ; pops 5 things at once: CS, EIP, EFLAGS, SS, ESP
 
 ; Common stub for IRQs (Hardware interrupts)
 irq_common_stub:
