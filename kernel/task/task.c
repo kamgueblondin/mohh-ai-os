@@ -111,44 +111,61 @@ task_t* create_task(void (*entry_point)()) {
 //                   Le dernier élément doit être NULL.
 // Retourne le PID du nouveau processus, ou -1 en cas d'erreur.
 int create_user_process(const char* path_in_initrd, char* const argv_from_caller[]) {
+    // DEBUG: Utiliser une couleur distinctive pour les messages de create_user_process
+    char debug_color = 0x0E; // Jaune sur noir pour le débogage
+
+    print_string("DEBUG_CUP: Entered create_user_process for: ", debug_color); print_string(path_in_initrd, debug_color); print_string("\n", debug_color);
+
     asm volatile("cli"); // Désactiver les interruptions pendant la création
 
+    print_string("DEBUG_CUP: Calling initrd_read_file for: ", debug_color); print_string(path_in_initrd, debug_color); print_string("\n", debug_color);
     uint32_t elf_file_size = 0;
     uint8_t* elf_data = (uint8_t*)initrd_read_file(path_in_initrd, &elf_file_size);
 
+    print_string("DEBUG_CUP: initrd_read_file returned elf_data: ", debug_color); print_hex((uint32_t)elf_data, debug_color); print_string(", size: ", debug_color); print_hex(elf_file_size, debug_color); print_string("\n", debug_color);
+
     if (!elf_data || elf_file_size == 0) {
-        // print_string("ELF file not found or empty: ", 0x0C); print_string(path_in_initrd, 0x0C); print_char('\n',0,0,0);
+        print_string("DEBUG_CUP: ELF file not found or empty. Path: ", 0x0C); print_string(path_in_initrd, 0x0C); print_string("\n", 0x0C);
         asm volatile("sti");
         return -1; // Erreur: Fichier non trouvé ou vide
     }
 
+    print_string("DEBUG_CUP: Calling pmm_alloc_page for TCB\n", debug_color);
     task_t* new_task = (task_t*)pmm_alloc_page(); // Allocation pour la TCB
+    print_string("DEBUG_CUP: pmm_alloc_page for TCB returned: ", debug_color); print_hex((uint32_t)new_task, debug_color); print_string("\n", debug_color);
+
     if (!new_task) {
-        // print_string("Failed to allocate TCB for new process\n", 0x0C);
+        print_string("DEBUG_CUP: Failed to allocate TCB for new process\n", 0x0C);
         asm volatile("sti");
         return -1;
     }
     memset(new_task, 0, sizeof(task_t));
 
-    // Charger l'ELF. elf_load s'occupe d'allouer les pages physiques
-    // et de les mapper dans l'espace virtuel via vmm_map_user_page.
-    // IMPORTANT: elf_load doit être conscient qu'il ne peut pas simplement mapper à des adresses physiques.
-    // Il doit choisir des adresses virtuelles utilisateur (par exemple, à partir de 0x00010000 ou 0x08048000).
-    uint32_t entry_point = elf_load(elf_data); // elf_load needs to handle virtual addresses.
+    print_string("DEBUG_CUP: Calling elf_load with elf_data: ", debug_color); print_hex((uint32_t)elf_data, debug_color); print_string("\n", debug_color);
+    uint32_t entry_point = elf_load(elf_data); 
+    print_string("DEBUG_CUP: elf_load returned entry_point: ", debug_color); print_hex(entry_point, debug_color); print_string("\n", debug_color);
+
     if (entry_point == 0) {
-        // print_string("Failed to load ELF: ", 0x0C); print_string(path_in_initrd, 0x0C); print_char('\n',0,0,0);
-        pmm_free_page(new_task);
+        print_string("DEBUG_CUP: Failed to load ELF. Path: ", 0x0C); print_string(path_in_initrd, 0x0C); print_string("\n", 0x0C);
+        pmm_free_page(new_task); // Libérer la TCB allouée
+        // Note: elf_data n'a pas besoin d'être libéré ici car il pointe vers une partie de l'initrd,
+        // ou il est géré par initrd_read_file (qui ne semble pas allouer dynamiquement pour le retour).
         asm volatile("sti");
         return -1;
     }
 
+    print_string("DEBUG_CUP: Allocating user stack pages...\n", debug_color);
     // Allouer et mapper la pile utilisateur dans la plage virtuelle définie
     // USER_STACK_VIRTUAL_BOTTOM à USER_STACK_VIRTUAL_TOP
     for (int i = 0; i < USER_STACK_NUM_PAGES; ++i) {
+        print_string("DEBUG_CUP: User stack, page ", debug_color); print_hex(i, debug_color); print_string(": calling pmm_alloc_page\n", debug_color);
         void* phys_page_for_stack = pmm_alloc_page();
+        print_string("DEBUG_CUP: User stack, page ", debug_color); print_hex(i, debug_color); print_string(": pmm_alloc_page returned: ", debug_color); print_hex((uint32_t)phys_page_for_stack, debug_color); print_string("\n", debug_color);
+
         if (!phys_page_for_stack) {
-            // print_string("Failed to allocate user stack page\n", 0x0C);
+            print_string("DEBUG_CUP: Failed to allocate user stack page ", 0x0C); print_hex(i, 0x0C); print_string("\n", 0x0C);
             // TODO: Libérer les pages ELF et la TCB. Cela nécessite de savoir quelles pages ELF a allouées.
+            // Et aussi les pages de pile utilisateur déjà allouées.
             // Pour l'instant, libération simple de la TCB.
             pmm_free_page(new_task);
             asm volatile("sti");
@@ -156,8 +173,10 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
         }
         // Calcule l'adresse virtuelle pour la page de pile actuelle (en partant du bas)
         void* stack_page_vaddr = (void*)(USER_STACK_VIRTUAL_BOTTOM + i * PAGE_SIZE);
+        print_string("DEBUG_CUP: Mapping user stack page: vaddr=", debug_color); print_hex((uint32_t)stack_page_vaddr, debug_color); print_string(" to paddr=", debug_color); print_hex((uint32_t)phys_page_for_stack, debug_color); print_string("\n", debug_color);
         vmm_map_user_page(stack_page_vaddr, phys_page_for_stack);
     }
+    print_string("DEBUG_CUP: User stack allocation complete.\n", debug_color);
 
     // ESP pour le mode utilisateur doit pointer vers le sommet de la pile allouée.
     uint32_t esp_user_initial = USER_STACK_VIRTUAL_TOP;
@@ -211,15 +230,19 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
     new_task->argc = argc;
 
     // Initialiser l'état du CPU pour la nouvelle tâche
-    new_task->id = next_task_id++;
+    // new_task->id est assigné plus tard, après l'allocation de la pile noyau
     new_task->state = TASK_READY;
     new_task->parent = (struct task*)current_task; // La tâche appelante est le parent
     new_task->child_pid_waiting_on = 0; // L'enfant n'attend personne au début
 
+    print_string("DEBUG_CUP: Calling pmm_alloc_page for kernel stack\n", debug_color);
     // Allouer une pile noyau pour la tâche utilisateur
     void* kernel_stack_ptr = pmm_alloc_page();
+    print_string("DEBUG_CUP: pmm_alloc_page for kernel stack returned: ", debug_color); print_hex((uint32_t)kernel_stack_ptr, debug_color); print_string("\n", debug_color);
+
     if (!kernel_stack_ptr) {
-        // TODO: Cleanup ELF pages and user stack pages
+        print_string("DEBUG_CUP: Failed to allocate kernel stack for new process\n", 0x0C);
+        // TODO: Cleanup ELF pages, user stack pages, and TCB
         pmm_free_page(new_task); // Free TCB
         asm volatile("sti");
         return -1;
@@ -227,7 +250,7 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
     uint32_t kernel_stack_top = (uint32_t)kernel_stack_ptr + KERNEL_TASK_STACK_SIZE;
 
     // Initialiser l'état du CPU pour la nouvelle tâche
-    new_task->id = next_task_id++;
+    new_task->id = next_task_id++; // Assignation du PID ici
     new_task->state = TASK_READY;
     new_task->parent = (struct task*)current_task; // La tâche appelante est le parent
     new_task->child_pid_waiting_on = 0; // L'enfant n'attend personne au début
