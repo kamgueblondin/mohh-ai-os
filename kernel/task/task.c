@@ -216,25 +216,67 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
     new_task->parent = (struct task*)current_task; // La tâche appelante est le parent
     new_task->child_pid_waiting_on = 0; // L'enfant n'attend personne au début
 
-    memset(&new_task->cpu_state, 0, sizeof(cpu_state_t));
+    // Allouer une pile noyau pour la tâche utilisateur
+    void* kernel_stack_ptr = pmm_alloc_page();
+    if (!kernel_stack_ptr) {
+        // TODO: Cleanup ELF pages and user stack pages
+        pmm_free_page(new_task); // Free TCB
+        asm volatile("sti");
+        return -1;
+    }
+    uint32_t kernel_stack_top = (uint32_t)kernel_stack_ptr + KERNEL_TASK_STACK_SIZE;
+
+    // Initialiser l'état du CPU pour la nouvelle tâche
+    new_task->id = next_task_id++;
+    new_task->state = TASK_READY;
+    new_task->parent = (struct task*)current_task; // La tâche appelante est le parent
+    new_task->child_pid_waiting_on = 0; // L'enfant n'attend personne au début
+
+    memset(&new_task->cpu_state, 0, sizeof(cpu_state_t)); // Met tous les regs de la TCB à 0
+
+    // Préparer la pile noyau pour le premier iret vers le mode utilisateur
+    // Cette pile sera pointée par new_task->cpu_state.esp
+    // Ordre pour iret: EIP, CS, EFLAGS, ESP_user, SS_user
+    // Ordre pour popad: EDI, ESI, EBP, ESP_dummy, EBX, EDX, ECX, EAX
+    // ESP final doit pointer vers EAX (ou EDI si on considère l'ordre de popad)
+    // La pile grandit vers le bas (les adresses diminuent)
+
+    uint32_t* kstack = (uint32_t*)kernel_stack_top;
+
+    // Trame IRET pour le mode utilisateur
+    *(--kstack) = USER_DATA_SELECTOR;      // SS_user
+    *(--kstack) = current_esp_user;        // ESP_user (pointe vers argc sur la pile utilisateur)
+    *(--kstack) = 0x00000202;              // EFLAGS_user (IF=1, bit 1=1, IOPL=0)
+    *(--kstack) = USER_CODE_SELECTOR;      // CS_user
+    *(--kstack) = entry_point;             // EIP_user (point d'entrée ELF)
+
+    // Trame pour popad (registres généraux, initialisés à 0 pour une nouvelle tâche)
+    // PUSHAD pousse EDI, ESI, EBP, ESP_kernel_dummy, EBX, EDX, ECX, EAX.
+    // POPAD les restaure dans l'ordre inverse: EAX, ECX, EDX, EBX, ESP_dummy, EBP, ESI, EDI.
+    // Donc, sur la pile, avant EFLAGS pour popfd, nous devons avoir (du plus haut au plus bas sur la pile):
+    // EAX, ECX, EDX, EBX, ESP_dummy, EBP, ESI, EDI
+    *(--kstack) = 0; // EDI (pour popad)
+    *(--kstack) = 0; // ESI
+    *(--kstack) = 0; // EBP
+    *(--kstack) = 0; // ESP_dummy (valeur non utilisée par popad mais une place est réservée)
+    *(--kstack) = 0; // EBX
+    *(--kstack) = 0; // EDX
+    *(--kstack) = 0; // ECX
+    *(--kstack) = 0; // EAX
+
+    // L'ESP du noyau pour la nouvelle tâche pointera ici (vers EAX sur la pile noyau)
+    // context_switch fera:
+    // mov esp, new_task->cpu_state.esp
+    // popad  (restaure EAX..EDI)
+    // iret   (restaure EIP_user, CS_user, EFLAGS_user, ESP_user, SS_user)
+    new_task->cpu_state.esp = (uint32_t)kstack;
+
+    // Les champs eip et eflags dans cpu_state_t ne sont pas directement utilisés
+    // par ce mécanisme de premier lancement car iret prend tout sur la pile.
+    // On les met à jour pour la cohérence ou le débogage.
     new_task->cpu_state.eip = entry_point;
-    new_task->cpu_state.esp = current_esp_user; // ESP pointe vers argc sur la pile utilisateur
-    new_task->cpu_state.ebp = 0;                // Ou current_esp_user, ou USER_STACK_VIRTUAL_TOP. 0 est commun pour le _start.
-
-    // EFLAGS: IF=1 (interruptions activées), IOPL=0 (pas d'accès I/O direct pour user), bit 1 toujours à 1.
     new_task->cpu_state.eflags = 0x00000202;
-                                        // Pour IOPL=3 (accès aux ports), il faudrait 0x3202.
-                                        // Les syscalls wrappers utilisent int 0x80, donc IOPL n'est pas critique ici.
 
-    // Segments utilisateur (doivent être configurés dans la GDT)
-    // TODO: La structure cpu_state_t actuelle ne stocke pas les sélecteurs de segment.
-    // Ils devront être mis sur la pile d'une manière ou d'une autre avant le premier IRET vers user mode.
-    // new_task->cpu_state.cs = USER_CODE_SELECTOR;
-    // new_task->cpu_state.ss = USER_DATA_SELECTOR;
-    // new_task->cpu_state.ds = USER_DATA_SELECTOR;
-    // new_task->cpu_state.es = USER_DATA_SELECTOR;
-    // new_task->cpu_state.fs = USER_DATA_SELECTOR; // Ou un sélecteur TLS si utilisé
-    // new_task->cpu_state.gs = USER_DATA_SELECTOR; // Ou un sélecteur TLS si utilisé
 
     // Ajouter à la file des tâches
     if (task_queue_head == NULL) { // Devrait être la tâche noyau initiale
