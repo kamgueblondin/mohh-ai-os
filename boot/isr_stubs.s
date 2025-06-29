@@ -4,9 +4,34 @@ bits 32
 global isr%1
 isr%1:
     cli                ; Disable interrupts
-    push byte 0        ; Push a dummy error code
-    push byte %1       ; Push the interrupt number
-    jmp isr_common_stub
+
+    %if %1 == 3        ; Specific test for ISR3 (Breakpoint) to test pushes
+        ; Marqueur VGA 1 (avant tout push)
+        mov edi, 0xB8000
+        mov word [edi + 9*2], 0x1F58 ; 10th char: 'X' White on Blue (0x1F)
+
+        push byte 0        ; Push a dummy error code
+
+        ; Marqueur VGA 2 (après push 0)
+        mov edi, 0xB8000
+        mov word [edi + 10*2], 0x1F59 ; 11th char: 'Y' White on Blue (0x1F)
+
+        push byte %1       ; Push the interrupt number (qui sera 3)
+
+        ; Marqueur VGA 3 (après push 3)
+        mov edi, 0xB8000
+        mov word [edi + 11*2], 0x1F5A ; 12th char: 'Z' White on Blue (0x1F)
+
+    isr3_push_test_loop:
+        hlt
+        jmp isr3_push_test_loop
+        ; jmp isr_common_stub ; Commenté pour ce test
+    %else
+        ; Chemin normal pour les autres ISRs sans code d'erreur
+        push byte 0
+        push byte %1
+        jmp isr_common_stub
+    %endif
 %endmacro
 
 %macro ISR_ERRCODE 1   ; Macro for ISRs with error codes
