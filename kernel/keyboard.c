@@ -89,21 +89,12 @@ void keyboard_prepare_for_gets(char* user_buf, uint32_t user_buf_size) {
 
 // Appelée par keyboard_handler_main lorsqu'un caractère est tapé et qu'une tâche attend.
 void keyboard_process_char_for_gets(char ascii) {
-    char msg[] = "DEBUG_KPCFG: Entered. ASCII:  \n";
-    msg[29] = ascii;
-    print_string(msg, 0x0E);
-
     if (!task_waiting_for_input || !user_target_buffer) {
-        print_string("DEBUG_KPCFG: No task or user_target_buffer. Exiting.\n", 0x0E);
         return; // Personne n'attend ou le buffer n'est pas prêt
     }
-    print_string("DEBUG_KPCFG: task_waiting_for_input ID: ", 0x0E); print_hex(task_waiting_for_input->id, 0x0E); print_string("\n", 0x0E);
-
 
     if (ascii == '\n') {
-        print_string("DEBUG_KPCFG: Newline received.\n", 0x0E);
         kbd_internal_buffer[kbd_internal_buffer_idx] = '\0'; // Terminer le buffer interne
-        print_string("DEBUG_KPCFG: kbd_internal_buffer: [", 0x0E); print_string(kbd_internal_buffer, 0x0E); print_string("]\n", 0x0E);
 
         // Copier vers le buffer utilisateur, en respectant la taille max
         uint32_t copy_len = kbd_internal_buffer_idx;
@@ -113,24 +104,17 @@ void keyboard_process_char_for_gets(char ascii) {
         memcpy(user_target_buffer, kbd_internal_buffer, copy_len);
         user_target_buffer[copy_len] = '\0'; // Terminer le buffer utilisateur
         num_chars_read_for_gets = copy_len;
-        print_string("DEBUG_KPCFG: Copied to user_target_buffer. num_chars_read_for_gets: ", 0x0E); print_hex(num_chars_read_for_gets, 0x0E); print_string("\n", 0x0E);
 
         print_char(ascii, vga_x, vga_y, current_color); // Écho du retour à la ligne
 
-        // Réveiller la tâche et stocker la valeur de retour
-        if (task_waiting_for_input) { // Double check
-            task_waiting_for_input->syscall_retval = num_chars_read_for_gets;
-            task_waiting_for_input->state = TASK_READY;
-            print_string("DEBUG_KPCFG: Task ID ", 0x0E); print_hex(task_waiting_for_input->id, 0x0E);
-            print_string(" state set to READY. syscall_retval: ", 0x0E); print_hex(task_waiting_for_input->syscall_retval, 0x0E); print_string("\n", 0x0E);
-        }
+        // Réveiller la tâche
+        task_waiting_for_input->state = TASK_READY;
+        // Le syscall handler mettra à jour cpu->eax avec num_chars_read_for_gets
 
         // Réinitialiser pour le prochain appel à gets
         task_waiting_for_input = NULL;
         user_target_buffer = NULL;
         kbd_internal_buffer_idx = 0;
-        // num_chars_read_for_gets est implicitement réinitialisé car kbd_internal_buffer_idx l'est,
-        // ou il sera recalculé au prochain gets.
 
     } else if (ascii == '\b') { // Backspace
         if (kbd_internal_buffer_idx > 0) {
@@ -150,35 +134,22 @@ void keyboard_process_char_for_gets(char ascii) {
 
 // Handler principal d'interruption clavier
 void keyboard_handler_main() {
-    print_string("DEBUG_KHM: Entered.\n", 0x0E);
     unsigned char scancode = inb(0x60);
-    print_string("DEBUG_KHM: Scancode: ", 0x0E); print_hex(scancode, 0x0E); print_string("\n", 0x0E);
 
     if (scancode < 0x80) { // On ne gère que les pressions de touche (pas les relâchements)
         if (scancode < sizeof(scancode_map) && scancode_map[scancode] != 0) {
             char c = scancode_map[scancode];
-            char msg[] = "DEBUG_KHM: ASCII:  \n";
-            msg[19] = c; // Insérer le caractère
-            print_string(msg, 0x0E);
-
             if (task_waiting_for_input != NULL) {
-                print_string("DEBUG_KHM: task_waiting_for_input is not NULL. Calling keyboard_process_char_for_gets.\n", 0x0E);
                 keyboard_process_char_for_gets(c);
             } else {
-                print_string("DEBUG_KHM: No task waiting for input.\n", 0x0E);
                 // Si aucune tâche n'attend via SYS_GETS, on pourrait :
                 // 1. Ignorer la touche
                 // 2. L'envoyer à une console par défaut (si elle existe)
                 // 3. Pour l'instant, on l'ignore car le shell sera toujours en attente de SYS_GETS.
             }
-        } else {
-            print_string("DEBUG_KHM: Scancode not in map or is 0.\n", 0x0E);
         }
-    } else {
-        print_string("DEBUG_KHM: Key release scancode.\n", 0x0E);
     }
-    // L'EOI (End Of Interrupt) est géré par le stub d'interruption irq1.
-    print_string("DEBUG_KHM: Exiting.\n", 0x0E);
+    // L'EOI (End Of Interrupt) est géré par le stub d'interruption commun ou l'ISR de plus haut niveau.
 }
 
 // Fonction pour que le syscall handler récupère le nombre de caractères lus.

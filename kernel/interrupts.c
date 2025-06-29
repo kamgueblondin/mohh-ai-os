@@ -111,75 +111,31 @@ void fault_handler(void* esp_at_call) {
 
     // Simpler interpretation: The `esp_at_call` is the `esp` right after `push eax` (ds_val) in the stub.
     // So:
-    // esp_at_call[0] = ds_val  <-- This was the old assumption if segments were pushed by C caller.
-    //
-    // Nouvelle convention avec isr_common_stub actuel (pusha, puis call fault_handler):
-    // `esp_at_call` est l'ESP après `pusha`.
-    // [esp_at_call+0]  (i.e. ((uint32_t*)esp_at_call)[0]) = EDI sauvegardé par pusha
-    // [esp_at_call+4]  (i.e. ((uint32_t*)esp_at_call)[1]) = ESI sauvegardé par pusha
+    // esp_at_call[0] = ds_val
+    // esp_at_call[1] = edi
     // ...
-    // [esp_at_call+28] (i.e. ((uint32_t*)esp_at_call)[7]) = EAX sauvegardé par pusha
-    //
-    // Les valeurs `int_num` et `err_code` ont été poussées sur la pile AVANT `jmp isr_common_stub`
-    // (et donc avant `pusha`).
-    // Si ESP_orig est ESP avant `push byte 0` et `push byte N` dans les macros ISR_... :
-    //   [ESP_orig - 4] = int_num
-    //   [ESP_orig - 8] = err_code (ou dummy)
-    // Après `pusha` (32 octets), ESP a diminué de 32.
-    // Donc, int_num est à `[ESP_apres_pusha + 32 - 4]` par rapport à l'ESP avant les push des macros. Non, c'est plus simple.
-    //   Stack avant `jmp isr_common_stub`:
-    //     [ESP] -> int_num
-    //     [ESP+4] -> err_code
-    //     [ESP+8] -> EIP (de l'instruction fautive, poussé par CPU)
-    //     ...
-    //   Dans `isr_common_stub`, `pusha` est fait. ESP diminue de 32 octets.
-    //   Donc, `int_num` est à `[ESP_apres_pusha + 32 octets]`. Index = 32/4 = 8.
-    //   `err_code` est à `[ESP_apres_pusha + 36 octets]`. Index = 36/4 = 9.
-    //   `eip_fault` (poussé par CPU) est à `[ESP_apres_pusha + 40 octets]`. Index = 40/4 = 10.
+    // esp_at_call[8] = eax_val
+    // esp_at_call[9] = int_num (pushed by macro ISR_NOERRCODE/ERRCODE before jmp isr_common_stub)
+    // esp_at_call[10] = err_code (pushed by CPU or macro before jmp isr_common_stub)
+    // esp_at_call[11] = eip_fault
+    // This seems more plausible with the original indexing [10], [11], [12] for int_num, err_code, eip.
+    // Let's stick to the original interpretation of stack indices [10], [11], [12] relative to
+    // the base of the "interrupt frame" passed implicitly to fault_handler.
 
-    uint32_t int_num  = ((uint32_t*)esp_at_call)[8];
-    // uint32_t err_code = ((uint32_t*)esp_at_call)[9];
-    // uint32_t eip_fault= ((uint32_t*)esp_at_call)[10];
+    uint32_t int_num  = ((uint32_t*)esp_at_call)[10]; // int_num pushed by our ISR_ macro
+    // uint32_t err_code = ((uint32_t*)esp_at_call)[11]; // err_code pushed by CPU or our macro
+    // uint32_t eip_fault= ((uint32_t*)esp_at_call)[12]; // eip pushed by CPU
 
     volatile unsigned short* vga = (unsigned short*)0xB8000;
     char id_char = ' ';
 
     // Clear a portion of the screen first to make messages visible
-    // for (int i = 0; i < 80 * 2; ++i) { // Clear top 2 lines
-    //     vga[i] = (unsigned short)' ' | (0x0F << 8); // White on Black
-    // }
-    // Commented out clear screen to ensure our VGA debug markers are not erased if fault occurs very early.
-    // vga_x = 0; vga_y = 0; // Reset internal cursor for print_char if it were used
+    for (int i = 0; i < 80 * 2; ++i) { // Clear top 2 lines
+        vga[i] = (unsigned short)' ' | (0x0F << 8); // White on Black
+    }
+    vga_x = 0; vga_y = 0; // Reset internal cursor for print_char if it were used
 
-    if (int_num == 3) { // Breakpoint Exception
-        id_char = 'B'; // For Breakpoint
-        vga[4] = (unsigned short)'B' | (0xE000); // 5th char, 'B' Jaune sur Fond Noir (E=Jaune, 0=Noir)
-                                                 // On écrase le caractère et la couleur.
-        // On pourrait aussi juste changer le fond: vga[4] = (vga[4] & 0x00FF) | (0xE000);
-        // Pas besoin d'afficher "BPF" etc. pour ce test, le changement de couleur suffit.
-        // On va quand même afficher quelque chose pour être sûr.
-        vga[0] = (unsigned short)id_char | (0x0E << 8); // Jaune sur Noir
-        vga[1] = (unsigned short)'P' | (0x0E << 8);
-        vga[2] = (unsigned short)' ' | (0x0E << 8);
-
-
-    } else if (int_num == 13) { // General Protection Fault
-        id_char = 'G'; // For GPF
-        vga[3] = (vga[3] & 0x00FF) | (0x5F00); // 4th char, Fond Magenta, Texte BlancBrillant 'G'
-        vga[0] = (unsigned short)id_char | (0x0C << 8);
-        vga[1] = (unsigned short)'P' | (0x0C << 8);
-        vga[2] = (unsigned short)'F' | (0x0C << 8);
-         uint32_t err_code_gpf = ((uint32_t*)esp_at_call)[11]; // err_code for GPF
-         // Display error code for GPF
-        vga[80*1 + 0] = 'E'; vga[80*1 + 1] = 'R'; vga[80*1 + 2] = 'C'; vga[80*1 + 3] = '=';
-        for (int i = 0; i < 8; i++) {
-            char hexdigit = (err_code_gpf >> ((7-i)*4)) & 0xF;
-            if (hexdigit < 10) hexdigit += '0';
-            else hexdigit += 'A' - 10;
-            vga[80*1 + 4 + i] = (unsigned short)hexdigit | (0x0C << 8);
-        }
-
-    } else if (int_num == 14) { // Page Fault
+    if (int_num == 14) { // Page Fault
         id_char = 'P';
         uint32_t faulting_address;
         asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
@@ -243,28 +199,13 @@ void irq_handler_c(void* esp_at_call) {
 
 // Initialise le PIC et configure les entrées IDT pour les ISRs et IRQs.
 void interrupts_init() {
-    volatile unsigned short* video_debug_irq_init = (unsigned short*)0xB8000;
-    video_debug_irq_init[5] = (video_debug_irq_init[5] & 0x00FF) | (0x6F00); // 6th char, Fond Marron, Texte BlancBrillant
-
-    extern void print_string(const char* str, char color); // Assurer la visibilité pour print_string/print_hex
-    extern void print_hex(uint32_t n, char color);
-    extern void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags); // Déjà dans idt.h, mais pour être sûr
-    extern void isr3(); // Assurer la visibilité de l'adresse de isr3
-
-    print_string("DEBUG_IRQ_INIT: Entered.\n", 0x0A); // Vert
-
     pic_remap(0x20, 0x28); // IRQs 0-7 à 0x20-0x27 (32-39), IRQs 8-15 à 0x28-0x2F (40-47)
-    print_string("DEBUG_IRQ_INIT: PIC remapped.\n", 0x0A);
 
     // Configuration des ISRs (Exceptions CPU)
     idt_set_gate(0, (uint32_t)isr0, 0x08, 0x8E);
     idt_set_gate(1, (uint32_t)isr1, 0x08, 0x8E);
     idt_set_gate(2, (uint32_t)isr2, 0x08, 0x8E);
-
-    uint32_t addr_isr3 = (uint32_t)isr3;
-    idt_set_gate(3, addr_isr3, 0x08, 0x8E);
-    print_string("DEBUG_IRQ_INIT: ISR3 set in IDT. Addr: ", 0x0A); print_hex(addr_isr3, 0x0A); print_string("\n", 0x0A);
-
+    idt_set_gate(3, (uint32_t)isr3, 0x08, 0x8E);
     idt_set_gate(4, (uint32_t)isr4, 0x08, 0x8E);
     idt_set_gate(5, (uint32_t)isr5, 0x08, 0x8E);
     idt_set_gate(6, (uint32_t)isr6, 0x08, 0x8E);

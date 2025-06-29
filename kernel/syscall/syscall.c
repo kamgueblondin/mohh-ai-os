@@ -2,7 +2,6 @@
 #include "kernel/idt.h"        // Pour idt_set_gate et la définition de cpu_state_t (via interrupts.h)
 #include "kernel/task/task.h"  // Pour current_task, TASK_TERMINATED, TASK_WAITING_FOR_KEYBOARD, schedule(), cpu_state_t
 #include "kernel/keyboard.h"   // Pour keyboard_prepare_for_gets, keyboard_get_chars_read_count
-#include "kernel/libc.h"       // Pour print_string, print_hex, etc.
 #include <stdint.h>
 #include <stddef.h>     // Pour NULL
 
@@ -40,27 +39,7 @@ extern void syscall_interrupt_handler_asm();
 #define STACK_IDX_EAX 11
 
 void syscall_handler(void* stack_ptr_raw) { // Le type cpu_state_t* est trompeur ici.
-    // Test d'entrée ultra-basique: change la couleur de fond du premier caractère à l'écran
-    // pour prouver que cette fonction C est atteinte.
-    // volatile unsigned short* video_mem_test = (unsigned short*)0xB8000;
-    // video_mem_test[0] = (video_mem_test[0] & 0x00FF) | (0x4F00); // Fond Rouge, Caractère inchangé
-
     uint32_t* regs = (uint32_t*)stack_ptr_raw;
-
-    // Imprimer un message dès l'entrée pour confirmer l'appel et l'état de current_task
-    // Utiliser une couleur distincte, par exemple magenta sur noir (0x05)
-    print_string("SYSHNDLR_ENTRY\n", 0x05);
-    if (!current_task) {
-        print_string("SYSHNDLR_ERR: current_task is NULL\n", 0x05);
-    } else {
-        print_string("SYSHNDLR_INFO: current_task ID: ", 0x05); print_hex(current_task->id, 0x05); print_string("\n", 0x05);
-    }
-    if (!regs) {
-        print_string("SYSHNDLR_ERR: regs is NULL\n", 0x05);
-        // Ne pas essayer d'écrire dans regs[STACK_IDX_EAX] si regs est NULL
-        return; // Retour précoce critique
-    }
-
 
     if (!regs || !current_task) {
         if (regs) regs[STACK_IDX_EAX] = (uint32_t)-1;
@@ -91,30 +70,15 @@ void syscall_handler(void* stack_ptr_raw) { // Le type cpu_state_t* est trompeur
             {
                 char* user_buf = (char*)regs[STACK_IDX_EBX];
                 uint32_t user_buf_size = regs[STACK_IDX_ECX];
-                // print_string et print_hex sont maintenant inclus via libc.h
-
-                print_string("DEBUG_SYS_GETS: Entered. Task ID: ", 0x0F); print_hex(current_task->id, 0x0F);
-                print_string(", user_buf: ", 0x0F); print_hex((uint32_t)user_buf, 0x0F);
-                print_string(", user_buf_size: ", 0x0F); print_hex(user_buf_size, 0x0F); print_string("\n", 0x0F);
 
                 if (user_buf == NULL || user_buf_size == 0) {
-                    print_string("DEBUG_SYS_GETS: Invalid buffer or size. Returning -1.\n", 0x0F);
                     regs[STACK_IDX_EAX] = (uint32_t)-1;
                     break;
                 }
-                keyboard_prepare_for_gets(user_buf, user_buf_size); // current_task est assigné à task_waiting_for_input
+                keyboard_prepare_for_gets(user_buf, user_buf_size);
                 current_task->state = TASK_WAITING_FOR_KEYBOARD;
-                print_string("DEBUG_SYS_GETS: Task ID ", 0x0F); print_hex(current_task->id, 0x0F); print_string(" state set to WAITING_FOR_KEYBOARD. Calling schedule().\n", 0x0F);
-
                 schedule();
-
-                // Après schedule(), current_task est la tâche qui vient d'être réveillée ou sélectionnée.
-                // Si c'est la tâche qui a appelé SYS_GETS (et qui s'est réveillée), son current_task->syscall_retval est pertinent.
-                print_string("DEBUG_SYS_GETS: Returned from schedule(). Current (awakened/switched) Task ID: ", 0x0F); print_hex(current_task->id, 0x0F);
-                print_string(". syscall_retval for this task: ", 0x0F); print_hex(current_task->syscall_retval, 0x0F); print_string("\n", 0x0F);
-
-                regs[STACK_IDX_EAX] = current_task->syscall_retval; // regs est toujours la pile de la tâche qui a initié le syscall
-                print_string("DEBUG_SYS_GETS: Set EAX (for original calling task) to syscall_retval. Exiting syscall.\n", 0x0F);
+                regs[STACK_IDX_EAX] = keyboard_get_chars_read_count();
             }
             break;
 
@@ -148,24 +112,9 @@ void syscall_handler(void* stack_ptr_raw) { // Le type cpu_state_t* est trompeur
 }
 
 void syscall_init() {
-    volatile unsigned short* video_debug_syscall = (unsigned short*)0xB8000;
-    video_debug_syscall[1] = (video_debug_syscall[1] & 0x00FF) | (0xAF00); // Fond BleuCiel pour 2ème char au début de syscall_init
-
-    // Déclarations externes pour print_string/print_hex si elles ne sont pas déjà visibles globalement
-    // extern void print_string(const char* str, char color); // Normalement visible via syscall.h -> task.h -> ... -> libc.h
-    // extern void print_hex(uint32_t n, char color);       // Idem
-
-    print_string("DEBUG_SYSCALL_INIT: Entered.\n", 0x0D);
-
     // Enregistre syscall_interrupt_handler_asm pour l'interruption 0x80.
     // Flags 0xEE: Présent, DPL=3 (user mode), Trap Gate 32-bit.
     // Sélecteur 0x08: segment de code du noyau.
-    uint32_t handler_address = (uint32_t)syscall_interrupt_handler_asm;
-    print_string("DEBUG_SYSCALL_INIT: Address of syscall_interrupt_handler_asm: ", 0x0D);
-    print_hex(handler_address, 0x0D);
-    print_string("\n", 0x0D);
-
-    idt_set_gate(0x80, handler_address, 0x08, 0xEE);
-    print_string("DEBUG_SYSCALL_INIT: idt_set_gate(0x80, ...) called.\n", 0x0D);
-    // print_string("Syscall handler registered for int 0x80.\n", 0x0F); // Ancien Debug
+    idt_set_gate(0x80, (uint32_t)syscall_interrupt_handler_asm, 0x08, 0xEE);
+    // print_string("Syscall handler registered for int 0x80.\n", 0x0F); // Debug
 }
