@@ -14,6 +14,8 @@ shell.o: shell.c
 
 shell.bin: shell.o
 	$(LD) $(LDFLAGS) -o $@ $<
+	@echo "Taille de shell.bin :"
+	@ls -l $@
 
 shell_bin.o: shell.bin
 	objcopy -I binary -O elf32-i386 -B i386 --rename-section .data=.data.shell_bin shell.bin shell_bin.o
@@ -24,6 +26,8 @@ fake_ai.o: fake_ai.c
 
 fake_ai.bin: fake_ai.o
 	$(LD) $(LDFLAGS) -o $@ $<
+	@echo "Taille de fake_ai.bin :"
+	@ls -l $@
 
 fake_ai_bin.o: fake_ai.bin
 	objcopy -I binary -O elf32-i386 -B i386 --rename-section .data=.data.fake_ai_bin fake_ai.bin fake_ai_bin.o
