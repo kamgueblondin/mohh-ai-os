@@ -4,16 +4,7 @@ bits 32
 global isr%1
 isr%1:
     cli                ; Disable interrupts
-
-    %if %1 == 3        ; Specific test for ISR3 (Breakpoint)
-        ; VGA direct modification for ISR3 entry test
-        mov edi, 0xB8000
-        mov word [edi + 6*2], 0x1F42 ; 7th char: 'B' (0x42) White on Blue (0x1F)
-    isr3_loop:
-        hlt            ; Halt or loop to prevent further execution for this test
-        jmp isr3_loop
-    %endif
-
+    ; La section %if %1 == 3 a été supprimée, isr3 utilise maintenant le chemin standard.
     push byte 0        ; Push a dummy error code
     push byte %1       ; Push the interrupt number
     jmp isr_common_stub
@@ -39,25 +30,34 @@ irq%1:
 
 ; Common stub for ISRs (CPU exceptions)
 isr_common_stub:
-    pusha              ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
-    mov ax, ds         ; Lower 16-bits of eax = ds.
-    push eax           ; save the data segment descriptor
-    mov ax, 0x10       ; load the kernel data segment descriptor
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
+    ; Test VGA direct pour vérifier l'entrée dans isr_common_stub
+    mov edi, 0xB8000
+    mov word [edi + 7*2], 0x2F43 ; 8th char: 'C' (0x43) White on Green (0x2F)
 
-    call fault_handler ; Call C handler
+stub_loop:
+    hlt
+    jmp stub_loop
 
-    pop ebx            ; reload the original data segment descriptor
-    mov ds, bx
-    mov es, bx
-    mov fs, bx
-    mov gs, bx
-    popa               ; Pops edi,esi,ebp...
-    add esp, 8         ; Cleans up the pushed error code and pushed ISR number
-    iret               ; pops 5 things at once: CS, EIP, EFLAGS, SS, ESP
+    ; Code original commenté pour ce test:
+    ; pusha              ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
+    ; mov ax, ds         ; Lower 16-bits of eax = ds.
+    ; push eax           ; save the data segment descriptor
+    ; mov ax, 0x10       ; load the kernel data segment descriptor
+    ; mov ds, ax
+    ; mov es, ax
+    ; mov fs, ax
+    ; mov gs, ax
+    ;
+    ; call fault_handler ; Call C handler
+    ;
+    ; pop ebx            ; reload the original data segment descriptor
+    ; mov ds, bx
+    ; mov es, bx
+    ; mov fs, bx
+    ; mov gs, bx
+    ; popa               ; Pops edi,esi,ebp...
+    ; add esp, 8         ; Cleans up the pushed error code and pushed ISR number
+    ; iret               ; pops 5 things at once: CS, EIP, EFLAGS, SS, ESP
 
 ; Common stub for IRQs (Hardware interrupts)
 irq_common_stub:
