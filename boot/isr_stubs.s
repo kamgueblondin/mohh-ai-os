@@ -29,39 +29,35 @@ irq%1:
 
 ; Common stub for ISRs (CPU exceptions)
 isr_common_stub:
-    ; Marqueur VGA avant pusha
+    ; Étape A: Reconfirmation que isr_common_stub est atteignable
+    ; avec isr3 utilisant le chemin standard (push 0, push 3, jmp isr_common_stub)
     mov edi, 0xB8000
-    mov word [edi + 7*2], 0x2F41 ; 8th char: 'A' (0x41) White on Green (0x2F)
+    mov word [edi + 7*2], 0x2F43 ; 8th char: 'C' (0x43) White on Green (0x2F)
 
-    pusha              ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
-
-    ; Marqueur VGA après pusha
-    mov edi, 0xB8000
-    mov word [edi + 8*2], 0x4F42 ; 9th char: 'B' (0x42) White on Red (0x4F)
-
-test_pusha_loop:
+reconfirm_stub_loop:
     hlt
-    jmp test_pusha_loop
+    jmp reconfirm_stub_loop
 
-    ; Le reste du code original est commenté pour ce test:
-    ; ; mov ax, ds         ; Lower 16-bits of eax = ds.
-    ; ; push eax           ; save the data segment descriptor
-    ; ; mov ax, 0x10       ; load the kernel data segment descriptor
-    ; ; mov ds, ax
-    ; ; mov es, ax
-    ; ; mov fs, ax
-    ; ; mov gs, ax
-    ; ;
-    ; ; call fault_handler ; Call C handler
-    ; ;
-    ; ; pop ebx            ; reload the original data segment descriptor
-    ; ; mov ds, bx
-    ; ; mov es, bx
-    ; ; mov fs, bx
-    ; ; mov gs, bx
-    ; ; popa               ; Pops edi,esi,ebp...
-    ; ; add esp, 8         ; Cleans up the pushed error code and pushed ISR number
-    ; ; iret               ; pops 5 things at once: CS, EIP, EFLAGS, SS, ESP
+    ; Code original commenté pour ce test:
+    ; pusha              ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
+    ; mov ax, ds         ; Lower 16-bits of eax = ds.
+    ; push eax           ; save the data segment descriptor
+    ; mov ax, 0x10       ; load the kernel data segment descriptor
+    ; mov ds, ax
+    ; mov es, ax
+    ; mov fs, ax
+    ; mov gs, ax
+    ;
+    ; call fault_handler ; Call C handler
+    ;
+    ; pop ebx            ; reload the original data segment descriptor
+    ; mov ds, bx
+    ; mov es, bx
+    ; mov fs, bx
+    ; mov gs, bx
+    ; popa               ; Pops edi,esi,ebp...
+    ; add esp, 8         ; Cleans up the pushed error code and pushed ISR number
+    ; iret               ; pops 5 things at once: CS, EIP, EFLAGS, SS, ESP
 
 ; Common stub for IRQs (Hardware interrupts)
 irq_common_stub:
