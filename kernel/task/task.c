@@ -1,7 +1,7 @@
 #include "task.h"
 #include "kernel/mem/pmm.h" // Pour pmm_alloc_page, PAGE_SIZE
 #include "kernel/mem/vmm.h" // Pour vmm_map_user_page
-#include "fs/initrd.h"      // Pour initrd_read_file
+// #include "fs/initrd.h"   // initrd n'est plus utilisé pour charger le shell initial
 #include "kernel/elf.h"     // Pour elf_load
 #include "kernel/libc.h"    // Pour memcpy, memset, strcmp
 #include <stddef.h>
@@ -114,18 +114,36 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
     // DEBUG: Utiliser une couleur distinctive pour les messages de create_user_process
     char debug_color = 0x0E; // Jaune sur noir pour le débogage
 
+    // Déclarations pour les symboles du linker pour les binaires embarqués
+    extern uint8_t _shell_bin_start[];
+    extern uint32_t _shell_bin_size;
+    extern uint8_t _fake_ai_bin_start[];
+    extern uint32_t _fake_ai_bin_size;
+
     print_string("DEBUG_CUP: Entered create_user_process for: ", debug_color); print_string(path_in_initrd, debug_color); print_string("\n", debug_color);
 
     asm volatile("cli"); // Désactiver les interruptions pendant la création
 
-    print_string("DEBUG_CUP: Calling initrd_read_file for: ", debug_color); print_string(path_in_initrd, debug_color); print_string("\n", debug_color);
+    uint8_t* elf_data = NULL;
     uint32_t elf_file_size = 0;
-    uint8_t* elf_data = (uint8_t*)initrd_read_file(path_in_initrd, &elf_file_size);
 
-    print_string("DEBUG_CUP: initrd_read_file returned elf_data: ", debug_color); print_hex((uint32_t)elf_data, debug_color); print_string(", size: ", debug_color); print_hex(elf_file_size, debug_color); print_string("\n", debug_color);
+    // Comparer path_in_initrd pour déterminer quel binaire charger
+    if (strcmp(path_in_initrd, "shell.bin") == 0) {
+        elf_data = _shell_bin_start;
+        elf_file_size = _shell_bin_size;
+        print_string("DEBUG_CUP: Loading embedded shell.bin. Addr: ", debug_color); print_hex((uint32_t)elf_data, debug_color); print_string(", Size: ", debug_color); print_hex(elf_file_size, debug_color); print_string("\n", debug_color);
+    } else if (strcmp(path_in_initrd, "fake_ai.bin") == 0) {
+        elf_data = _fake_ai_bin_start;
+        elf_file_size = _fake_ai_bin_size;
+        print_string("DEBUG_CUP: Loading embedded fake_ai.bin. Addr: ", debug_color); print_hex((uint32_t)elf_data, debug_color); print_string(", Size: ", debug_color); print_hex(elf_file_size, debug_color); print_string("\n", debug_color);
+    } else {
+        print_string("DEBUG_CUP: Unknown application requested: ", 0x0C); print_string(path_in_initrd, 0x0C); print_string("\n", 0x0C);
+        asm volatile("sti");
+        return -1; // Binaire non reconnu
+    }
 
     if (!elf_data || elf_file_size == 0) {
-        print_string("DEBUG_CUP: ELF file not found or empty. Path: ", 0x0C); print_string(path_in_initrd, 0x0C); print_string("\n", 0x0C);
+        print_string("DEBUG_CUP: ELF data is NULL or size is zero for: ", 0x0C); print_string(path_in_initrd, 0x0C); print_string("\n", 0x0C);
         asm volatile("sti");
         return -1; // Erreur: Fichier non trouvé ou vide
     }
