@@ -321,12 +321,37 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
 }
 
 
+// Fonctions VGA externes pour le débogage
+extern void print_string(const char* str, char color);
+extern char current_color; // Utiliser la couleur courante définie dans kernel.c
+extern void print_char(char c, int x, int y, char color); // Pour print_string
+extern int vga_x; // Pour print_string
+extern int vga_y; // Pour print_string
+
+
 // Ordonnanceur de tâches (scheduler).
+
+static char schedule_debug_char = '0';
+
 void schedule() {
-    // Les messages de débogage VGA ont été retirés.
+    // Debug: Display a changing character in the top-right corner (next to timer's)
+    if (vga_buffer) {
+        unsigned short val_to_write = (unsigned short)(schedule_debug_char) | (0x0E << 8); // Jaune sur Noir
+        vga_buffer[0 * 80 + 78] = val_to_write; // Position (0, 78)
+        schedule_debug_char++;
+        if (schedule_debug_char > '9') schedule_debug_char = '0';
+    }
+
 
     if (!current_task) {
-        // Aucune tâche courante, situation anormale après l'initialisation.
+        // This case should ideally not happen if tasking is initialized properly.
+        // If it does, print to a fixed location to avoid scrolling issues.
+        if (vga_buffer) {
+            const char* err_msg = "SCHED ERR: NO CUR TASK";
+            for (int i = 0; err_msg[i] != '\0' && i < 20; ++i) { // Limit length
+                 vga_buffer[1 * 80 + i] = (unsigned short)err_msg[i] | (0x0C << 8); // Rouge sur Noir, ligne 1
+            }
+        }
         return;
     }
 
@@ -400,6 +425,14 @@ void schedule() {
     }
 
     // Effectuer le changement de contexte.
+    // Debug: Afficher l'ID de la tâche vers laquelle on commute.
+    // print_string(" Switching to PID: ", current_color);
+    // char pid_str[12];
+    // itoa(current_task->id, pid_str, 10);
+    // print_string(pid_str, current_color);
+    // print_string("\n", current_color);
+
+
     context_switch(&prev_task->cpu_state, (cpu_state_t*)&current_task->cpu_state);
     // Normalement, `context_switch` ne retourne pas ici pour `prev_task` (l'ancienne tâche).
     // Il retourne pour la tâche qui est commutée "entrante" (`current_task` ici).

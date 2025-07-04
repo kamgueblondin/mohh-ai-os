@@ -126,8 +126,10 @@ void kmain(uint32_t physical_pd_addr) {
         while(1) asm volatile("cli; hlt"); // Arrêter le système
     } else {
         print_string("shell.bin lance avec PID: ", current_color);
-        print_hex((uint32_t)shell_pid, current_color); // Affichage temporaire en héxadécimal
-        print_string("\n", current_color);
+        char pid_str[12];
+        itoa(shell_pid, pid_str, 10);
+        print_string(pid_str, current_color);
+        print_string(" (DEBUG KMAIN)\n", current_color);
     }
 
     // Initialiser et démarrer le timer système pour permettre le préemption (scheduling)
