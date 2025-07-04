@@ -13,8 +13,21 @@
 
 // Debug counter for timer ticks
 static uint32_t timer_tick_debug_counter = 0;
-static char timer_debug_char_val = 'A'; // Renamed to avoid conflict if timer_debug_char was a global
+static char timer_debug_char_val = 'A';
 
+// Nouvelle fonction de débogage minimaliste pour IRQ0
+static char minimal_timer_indicator_char = 'T';
+void timer_handler_minimal_debug() {
+    // Debug: Afficher un caractère alternant pour montrer que cette fonction est appelée
+    debug_putc_at(minimal_timer_indicator_char, 69, 0, 0x0C); // Rouge sur Noir, à (x=69, y=0)
+    if (minimal_timer_indicator_char == 'T') minimal_timer_indicator_char = 'M';
+    else minimal_timer_indicator_char = 'T';
+
+    // Ne pas appeler schedule() pour l'instant pour garder les choses simples
+}
+
+
+// Ancien timer_handler, toujours présent mais non appelé directement par le nouveau stub IRQ0
 void timer_handler() {
     // Debug: Display a changing character in the top-right corner
     timer_tick_debug_counter++;
