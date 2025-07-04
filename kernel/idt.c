@@ -1,12 +1,12 @@
 #include "idt.h"
-#include <stdint.h> // For uint32_t etc.
+#include <stdint.h> // Pour uint32_t etc.
 
 // Déclaration de notre table IDT (256 entrées)
 struct idt_entry idt[256];
 struct idt_ptr idtp;
 
 // Fonction externe (définie dans idt_loader.s)
-extern void idt_load(struct idt_ptr* idtp); // Corrected to pass a pointer
+extern void idt_load(struct idt_ptr* idtp); // Corrigé pour passer un pointeur
 
 // Initialise une entrée de l'IDT
 void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags) {
@@ -24,11 +24,11 @@ void idt_init() {
     idtp.base = (uint32_t)&idt;
 
     // Remplit l'IDT avec des ISR nulles (par défaut)
-    // This replaces the commented-out memset
+    // Ceci remplace le memset commenté
     for (int i = 0; i < 256; i++) {
         idt_set_gate(i, 0, 0, 0);
     }
 
     // Charge la nouvelle IDT
-    idt_load(&idtp); // Pass the address of idtp
+    idt_load(&idtp); // Passe l'adresse de idtp
 }

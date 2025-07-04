@@ -7,7 +7,7 @@
 #include "task/task.h"
 #include "timer.h"
 #include "syscall/syscall.h" // Pour syscall_init()
-#include "libc.h"            // Pour strcmp (si besoin ici, sinon implicite via autres .h)
+#include "libc.h"            // Pour strcmp (si besoin ici, sinon implicite via d'autres .h)
 #include <stdint.h>
 
 // Pointeur vers la mémoire vidéo VGA. L'adresse 0xB8000 est standard.
@@ -15,71 +15,70 @@ volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
 // Position actuelle du curseur
 int vga_x = 0;
 int vga_y = 0;
-char current_color = 0x1F; // Default color
+char current_color = 0x1F; // Couleur par défaut
 
 // Fonction pour afficher un caractère à une position donnée avec une couleur donnée
 void print_char(char c, int x, int y, char color) {
-    if (c == '\n') {
-        vga_x = 0;
-        vga_y++;
-    } else if (c == '\b') {
-        if (vga_x > 0) {
-            vga_x--;
-            vga_buffer[vga_y * 80 + vga_x] = (unsigned short)' ' | (unsigned short)color << 8;
-        } else if (vga_y > 0) {
-            vga_y--;
-            vga_x = 79;
-            vga_buffer[vga_y * 80 + vga_x] = (unsigned short)' ' | (unsigned short)color << 8;
+    if (c == '\n') { // Si c'est un retour à la ligne
+        vga_x = 0;   // Retour au début de la ligne
+        vga_y++;     // Ligne suivante
+    } else if (c == '\b') { // Si c'est un retour arrière (backspace)
+        if (vga_x > 0) { // S'il y a des caractères sur la ligne actuelle
+            vga_x--;     // Reculer d'une position
+            vga_buffer[vga_y * 80 + vga_x] = (unsigned short)' ' | (unsigned short)color << 8; // Effacer le caractère
+        } else if (vga_y > 0) { // Si au début de la ligne mais pas la première ligne
+            vga_y--;            // Monter d'une ligne
+            vga_x = 79;         // Aller à la fin de la ligne précédente
+            vga_buffer[vga_y * 80 + vga_x] = (unsigned short)' ' | (unsigned short)color << 8; // Effacer (potentiellement)
         }
-    } else {
-        vga_buffer[y * 80 + x] = (unsigned short)c | (unsigned short)color << 8;
-        vga_x++;
+    } else { // Pour tout autre caractère
+        vga_buffer[y * 80 + x] = (unsigned short)c | (unsigned short)color << 8; // Afficher le caractère
+        vga_x++; // Avancer le curseur
     }
 
-    if (vga_x >= 80) {
-        vga_x = 0;
-        vga_y++;
+    if (vga_x >= 80) { // Si le curseur dépasse la largeur de l'écran
+        vga_x = 0;   // Retour au début de la ligne
+        vga_y++;     // Ligne suivante
     }
-    if (vga_y >= 25) {
-        // Basic scroll
-        for (int i = 0; i < 24 * 80; i++) {
+    if (vga_y >= 25) { // Si le curseur dépasse la hauteur de l'écran (défilement basique)
+        // Défilement basique (scrolling)
+        for (int i = 0; i < 24 * 80; i++) { // Déplacer chaque ligne d'une position vers le haut
             vga_buffer[i] = vga_buffer[i + 80];
         }
-        for (int i = 24 * 80; i < 25 * 80; i++) {
+        for (int i = 24 * 80; i < 25 * 80; i++) { // Effacer la dernière ligne
             vga_buffer[i] = (unsigned short)' ' | (unsigned short)color << 8;
         }
-        vga_x = 0; // Cursor to start of the scrolled line (which is now the last line)
-        vga_y = 24;
+        vga_x = 0; // Curseur au début de la ligne défilée (qui est maintenant la dernière ligne)
+        vga_y = 24; // Se positionner sur la dernière ligne (24 car indexé à partir de 0)
     }
 }
 
 // Fonction pour afficher une chaîne de caractères
 void print_string(const char* str, char color) {
-    for (int i = 0; str[i] != '\0'; i++) {
-        print_char(str[i], vga_x, vga_y, color);
+    for (int i = 0; str[i] != '\0'; i++) { // Parcourir la chaîne jusqu'au caractère nul
+        print_char(str[i], vga_x, vga_y, color); // Afficher chaque caractère
     }
 }
 
+// Fonction pour effacer l'écran
 void clear_screen(char color) {
-    for (int y = 0; y < 25; y++) {
-        for (int x = 0; x < 80; x++) {
-            vga_buffer[y * 80 + x] = (unsigned short)' ' | (unsigned short)color << 8;
+    for (int y = 0; y < 25; y++) { // Parcourir chaque ligne
+        for (int x = 0; x < 80; x++) { // Parcourir chaque colonne
+            vga_buffer[y * 80 + x] = (unsigned short)' ' | (unsigned short)color << 8; // Mettre un espace avec la couleur de fond
         }
     }
-    vga_x = 0;
+    vga_x = 0; // Réinitialiser la position du curseur
     vga_y = 0;
 }
 
 // La fonction principale de notre noyau
-// physical_pd_addr is the physical address of boot_page_directory from boot.s
+// physical_pd_addr est l'adresse physique de boot_page_directory depuis boot.s
 void kmain(uint32_t physical_pd_addr) {
     current_color = 0x1F; // Texte blanc sur fond bleu
     clear_screen(current_color);
-    // EARLY PRINT FOR DEBUGGING
-    print_string("KMAIN_CALLED_EARLY_DEBUG\n", 0x0A); // Green on Black for distinction
 
-    // Re-assert our page directory from _start, in case SMM or something changed CR3.
-    // Also ensure paging is enabled.
+    // Réaffirmer notre répertoire de pages depuis _start, au cas où SMM ou autre chose aurait changé CR3.
+    // S'assurer également que la pagination est activée.
     asm volatile (
         "mov %0, %%eax\n\t"
         "mov %%eax, %%cr3"
@@ -87,91 +86,65 @@ void kmain(uint32_t physical_pd_addr) {
 
     uint32_t temp_cr0;
     asm volatile("mov %%cr0, %0" : "=r"(temp_cr0));
-    if (!(temp_cr0 & 0x80000000)) { // If PG bit is not set
-        temp_cr0 |= 0x80000000;      // Set PG bit
+    if (!(temp_cr0 & 0x80000000)) { // Si le bit PG (Paging) n'est pas activé
+        temp_cr0 |= 0x80000000;      // Activer le bit PG
         asm volatile("mov %0, %%cr0" : : "r"(temp_cr0));
     }
-    // Add a print statement to confirm. Need itoa for physical_pd_addr.
-    // For now, just a generic message.
-    // print_string("CR3 re-asserted in kmain.\n", 0x0B); // Cyan on Black
-    // More detailed printing:
-    print_string("kmain: physical_pd_addr (intended CR3 from boot.s) = ", 0x0B);
-    print_hex(physical_pd_addr, 0x0B);
-    print_string("\n", 0x0B);
 
-    uint32_t current_cr3_val;
-    asm volatile("mov %%cr3, %0" : "=r"(current_cr3_val));
-    print_string("kmain: CR3 read back after set = ", 0x0B);
-    print_hex(current_cr3_val, 0x0B);
-    print_string("\n", 0x0B);
-
-    // Placeholder pour la structure Multiboot et l'adresse de fin du noyau.
+    // Espace réservé pour la structure Multiboot et l'adresse de fin du noyau.
     // uint32_t multiboot_magic = 0x2BADB002; // Non utilisé actuellement
     uint32_t multiboot_addr = 0; // Non utilisé par pmm_init dans sa forme actuelle
-    uint32_t kernel_end_addr = 0; // TODO: Obtenir cette valeur depuis le linker script, non utilisé par pmm_init actuellement
-
-    // Debug CR3 before PMM
-    asm volatile("mov %%cr3, %0" : "=r"(current_cr3_val));
-    print_string("kmain: CR3 before pmm_init = ", 0x0B);
-    print_hex(current_cr3_val, 0x0B);
-    print_string("\n", 0x0B);
+    uint32_t kernel_end_addr = 0; // TODO: Obtenir cette valeur depuis le script du linker, non utilisé par pmm_init actuellement
 
     // Initialiser la mémoire physique et virtuelle
-    uint32_t total_memory_bytes = 16 * 1024 * 1024; // Supposition pour l'instant
+    uint32_t total_memory_bytes = 16 * 1024 * 1024; // Supposition pour l'instant (16MiB)
     pmm_init(total_memory_bytes, kernel_end_addr, multiboot_addr);
 
-    // Debug CR3 before VMM
-    asm volatile("mov %%cr3, %0" : "=r"(current_cr3_val));
-    print_string("kmain: CR3 before vmm_init = ", 0x0B);
-    print_hex(current_cr3_val, 0x0B);
-    print_string("\n", 0x0B);
-
-    vmm_init(); // Active le paging
+    vmm_init(); // Active la pagination
     print_string("Gestionnaires PMM et VMM initialises.\n", current_color);
 
     // L'initialisation de l'initrd n'est plus nécessaire ici car les applications
     // sont directement intégrées dans l'image du noyau.
-    // Les messages relatifs à initrd_init et initrd_list_files sont supprimés.
     print_string("Applications utilisateur embarquees.\n", current_color);
 
     // Initialiser les interruptions et les appels système
-    idt_init();
+    idt_init();         // Initialise la table des descripteurs d'interruptions (IDT)
     interrupts_init();  // Configure le PIC, active les IRQ de base
-    syscall_init();     // Enregistre le handler pour int 0x80
-    print_string("IDT, PIC et Syscalls initialises.\n", current_color);
+    syscall_init();     // Enregistre le gestionnaire pour l'interruption 0x80 (appels système)
+    print_string("IDT, PIC et Appels Systeme initialises.\n", current_color);
 
     // Initialiser le multitâche
-    tasking_init(); // Crée la tâche noyau initiale (idle task)
+    tasking_init(); // Crée la tâche noyau initiale (tâche inactive ou "idle task")
     print_string("Multitache initialise.\n", current_color);
 
     // Lancer le shell utilisateur
     print_string("Lancement du shell...\n", current_color);
-    char* shell_argv[] = {"shell.bin", NULL}; // argv pour le shell
-    int shell_pid = create_user_process("shell.bin", shell_argv);
+    char* shell_argv[] = {"shell.bin", NULL}; // Arguments (argv) pour le shell
+    int shell_pid = create_user_process("shell.bin", shell_argv); // Tenter de créer le processus shell
 
-    if (shell_pid < 0) {
-        print_string("Echec du lancement de shell.bin. Arret.\n", 0x0C);
-        while(1) asm volatile("cli; hlt");
+    if (shell_pid < 0) { // Si la création du processus a échoué
+        print_string("Echec du lancement de shell.bin. Arret du systeme.\n", 0x0C); // Rouge sur Noir
+        while(1) asm volatile("cli; hlt"); // Arrêter le système
     } else {
         print_string("shell.bin lance avec PID: ", current_color);
-        // TODO: Fonction itoa pour afficher shell_pid
-        print_string("[PID affichage non implemente]\n", current_color);
+        print_hex((uint32_t)shell_pid, current_color); // Affichage temporaire en héxadécimal
+        print_string("\n", current_color);
     }
 
-    // Initialiser et démarrer le timer système pour permettre le scheduling
-    timer_init(100); // 100 Hz
+    // Initialiser et démarrer le timer système pour permettre le préemption (scheduling)
+    timer_init(100); // Configurer le timer pour une fréquence de 100 Hz
     print_string("Timer systeme active a 100Hz.\n", current_color);
 
     // Activer les interruptions globalement (si ce n'est pas déjà fait dans timer_init ou interrupts_init)
-    // `interrupts_init` devrait déjà avoir fait `sti`.
+    // `interrupts_init` devrait déjà avoir exécuté `sti`.
     // `timer_init` démarre les IRQ0 qui déclencheront le scheduler.
 
-    print_string("Systeme AI-OS operationnel. Passage au mode idle.\n", current_color);
+    print_string("Systeme AI-OS operationnel. Passage au mode inactif.\n", current_color);
 
-    // La tâche noyau initiale (kmain) devient la tâche "idle".
-    // Elle ne fait rien d'autre qu'attendre les interruptions.
+    // La tâche noyau initiale (kmain) devient la tâche "inactive" (idle).
+    // Elle ne fait rien d'autre qu'attendre les interruptions (qui peuvent déclencher le scheduler).
     while(1) {
-        asm volatile("hlt");
+        asm volatile("hlt"); // Met le CPU en état de basse consommation jusqu'à la prochaine interruption
     }
 }
 
