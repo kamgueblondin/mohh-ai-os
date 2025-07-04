@@ -1,3 +1,4 @@
+#include "gdt.h" // Ajout pour la GDT
 #include "idt.h"
 #include "interrupts.h"
 #include "keyboard.h"
@@ -103,11 +104,9 @@ void kmain(uint32_t physical_pd_addr) {
     vmm_init(); // Active la pagination
     print_string("Gestionnaires PMM et VMM initialises.\n", current_color);
 
-    // L'initialisation de l'initrd n'est plus nécessaire ici car les applications
-    // sont directement intégrées dans l'image du noyau.
-    print_string("Applications utilisateur embarquees.\n", current_color);
-
-    // Initialiser les interruptions et les appels système
+    // Initialiser GDT, IDT, interruptions et appels système
+    gdt_init();         // Initialise la Table Globale de Descripteurs (GDT)
+    print_string("GDT initialisee.\n", current_color);
     idt_init();         // Initialise la table des descripteurs d'interruptions (IDT)
     interrupts_init();  // Configure le PIC, active les IRQ de base
     syscall_init();     // Enregistre le gestionnaire pour l'interruption 0x80 (appels système)

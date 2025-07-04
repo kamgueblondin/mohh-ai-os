@@ -16,8 +16,8 @@ OS_IMAGE = build/ai_os.bin
 ISO_IMAGE = release/mohh-ai-os.iso
 
 # Liste des fichiers objets du noyau
-KERNEL_OBJECTS = build/boot.o build/idt_loader.o build/isr_stubs.o build/paging.o build/context_switch.o \
-                 build/kernel.o build/idt.o build/interrupts.o build/keyboard.o \
+KERNEL_OBJECTS = build/boot.o build/gdt_loader.o build/idt_loader.o build/isr_stubs.o build/paging.o build/context_switch.o \
+                 build/kernel.o build/gdt.o build/idt.o build/interrupts.o build/keyboard.o \
                  build/pmm.o build/vmm.o build/libc.o \
                  build/task.o build/timer.o build/syscall.o build/elf.o build/syscall_handler.o
 
@@ -58,9 +58,13 @@ build/%.o: kernel/%.c
 # Dépendances spécifiques et règles pour les fichiers .c
 # (La règle générique ci-dessus pourrait les gérer si les .h sont au même niveau ou via -I.)
 # Mais pour être explicite :
-build/kernel.o: kernel/kernel.c kernel/idt.h kernel/interrupts.h kernel/keyboard.h kernel/mem/pmm.h kernel/mem/vmm.h
+build/kernel.o: kernel/kernel.c kernel/gdt.h kernel/idt.h kernel/interrupts.h kernel/keyboard.h kernel/mem/pmm.h kernel/mem/vmm.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o $@
+
+build/gdt.o: kernel/gdt.c kernel/gdt.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c kernel/gdt.c -o $@
 
 build/idt.o: kernel/idt.c kernel/idt.h
 	@mkdir -p $(dir $@)
@@ -85,6 +89,10 @@ build/vmm.o: kernel/mem/vmm.c kernel/mem/vmm.h kernel/mem/pmm.h
 
 # Règles de compilation pour les fichiers assembleur .s
 build/boot.o: boot/boot.s
+	@mkdir -p $(dir $@)
+	$(AS) $(ASFLAGS) $< -o $@
+
+build/gdt_loader.o: boot/gdt_loader.s
 	@mkdir -p $(dir $@)
 	$(AS) $(ASFLAGS) $< -o $@
 
@@ -132,7 +140,7 @@ userspace_build:
 # Cible pour exécuter l'OS dans QEMU
 run: $(OS_IMAGE)
 	# Lancer QEMU avec le noyau, avec affichage graphique, serial multiplexé, verbose debug, no network
-	qemu-system-i386 -kernel $(OS_IMAGE) -serial mon:stdio -d int,cpu_reset,guest_errors -no-reboot -no-shutdown -net none
+	qemu-system-i386 -kernel $(OS_IMAGE) -display sdl -serial mon:stdio -d int,cpu_reset,guest_errors -no-reboot -no-shutdown -net none
 
 # Cible pour nettoyer le projet
 clean:
