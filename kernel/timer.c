@@ -23,11 +23,12 @@ void timer_handler_minimal_debug() {
     if (minimal_timer_indicator_char == 'T') minimal_timer_indicator_char = 'M';
     else minimal_timer_indicator_char = 'T';
 
-    // Ne pas appeler schedule() pour l'instant pour garder les choses simples
+    schedule(); // Appelons maintenant le scheduler
 }
 
 
 // Ancien timer_handler, toujours présent mais non appelé directement par le nouveau stub IRQ0
+// On pourrait le supprimer plus tard si timer_handler_minimal_debug devient le handler officiel.
 void timer_handler() {
     // Debug: Display a changing character in the top-right corner
     timer_tick_debug_counter++;
