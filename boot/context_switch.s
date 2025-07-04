@@ -15,9 +15,9 @@ section .text                 ; All code and data from here should be in .text
     ; %define OFF_ESI    16
     ; %define OFF_EDI    20
     ; %define OFF_EBP    24
-    %define OFF_ESP    28  ; Pointeur vers la pile noyau où l'état (registres, EFLAGS, trame iret) est sauvegardé
-    ; %define OFF_EIP    32  ; Non utilisé, EIP est sur la pile pour IRET
-    ; %define OFF_EFLAGS 36  ; Non utilisé, EFLAGS est sur la pile pour IRET/POPFD
+    ; %define OFF_EIP    28 ; Selon la structure cpu_state_t dans task.h
+    %define OFF_ESP    32 ; Selon la structure cpu_state_t dans task.h (après eip)
+    ; %define OFF_EFLAGS 36 ; Selon la structure cpu_state_t dans task.h
 
 context_switch:
     ; Arguments sur la pile du scheduler (appelant C):
