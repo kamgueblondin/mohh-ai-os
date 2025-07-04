@@ -293,3 +293,26 @@ void schedule() {
 
     context_switch(&prev_task->cpu_state, (cpu_state_t*)&current_task->cpu_state);
 }
+
+// Tâche noyau worker simple pour le débogage
+static char worker_task_char = 'W';
+void kernel_worker_task_main() {
+    debug_putc_at('K', 0, 2, 0x0A); // 'K'ernel 'W'orker 'S'tarted
+    debug_putc_at('W', 1, 2, 0x0A);
+    debug_putc_at('S', 2, 2, 0x0A);
+
+    while(1) {
+        debug_putc_at(worker_task_char, 68, 0, 0x0A); // Vert à (68,0)
+        if (worker_task_char == 'W') worker_task_char = 'V';
+        else worker_task_char = 'W';
+
+        // Petite boucle pour ralentir l'affichage et céder potentiellement le CPU implicitement
+        // via hlt si le timer interrompt pendant ce temps.
+        // Un vrai OS utiliserait un appel système pour dormir ou attendre.
+        for (volatile int i = 0; i < 5000000; ++i) {
+            // Boucle d'attente simple pour rendre le changement visible
+            // et permettre au timer d'interrompre.
+        }
+        // asm volatile("hlt"); // On pourrait aussi faire hlt pour attendre la prochaine interruption timer
+    }
+}
