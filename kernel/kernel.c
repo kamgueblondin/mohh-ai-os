@@ -125,21 +125,40 @@ void kmain(uint32_t physical_pd_addr) {
     tasking_init(); // Crée la tâche noyau initiale (tâche inactive ou "idle task")
     print_string("Multitache initialise.\n", current_color);
 
-    // Lancer le shell utilisateur
-    print_string("Lancement du shell...\n", current_color);
-    char* shell_argv[] = {"shell.bin", NULL}; // Arguments (argv) pour le shell
-    int shell_pid = create_user_process("shell.bin", shell_argv); // Tenter de créer le processus shell
+    // Déclarer la fonction worker task
+    extern void kernel_worker_task_main(); // Assurez-vous que cette déclaration est visible
 
-    if (shell_pid < 0) { // Si la création du processus a échoué
-        print_string("Echec du lancement de shell.bin. Arret du systeme.\n", 0x0C); // Rouge sur Noir
-        while(1) asm volatile("cli; hlt"); // Arrêter le système
+    // Créer la tâche worker noyau
+    print_string("Lancement de la tache worker noyau...\n", current_color);
+    task_t* worker_task = create_task(kernel_worker_task_main);
+    if (worker_task == NULL) {
+        print_string("Echec du lancement de la tache worker. Arret.\n", 0x0C);
+        while(1) asm volatile("cli; hlt");
     } else {
-        print_string("shell.bin lance avec PID: ", current_color);
+        print_string("Tache worker lancee avec PID: ", current_color);
         char pid_str[12];
-        itoa(shell_pid, pid_str, 10);
+        itoa(worker_task->id, pid_str, 10); // Utiliser worker_task->id
         print_string(pid_str, current_color);
         print_string(" (DEBUG KMAIN)\n", current_color);
     }
+
+    // Lancer le shell utilisateur (COMMENTÉ POUR L'INSTANT)
+    /*
+    print_string("Lancement du shell...\n", current_color);
+    char* shell_argv[] = {"shell.bin", NULL};
+    int shell_pid = create_user_process("shell.bin", shell_argv);
+
+    if (shell_pid < 0) {
+        print_string("Echec du lancement de shell.bin. Arret du systeme.\n", 0x0C);
+        while(1) asm volatile("cli; hlt");
+    } else {
+        print_string("shell.bin lance avec PID: ", current_color);
+        char pid_str_shell[12]; // Nom de variable différent
+        itoa(shell_pid, pid_str_shell, 10);
+        print_string(pid_str_shell, current_color);
+        print_string(" (DEBUG KMAIN)\n", current_color);
+    }
+    */
 
     // Initialiser et démarrer le timer système pour permettre le préemption (scheduling)
     timer_init(100); // Configurer le timer pour une fréquence de 100 Hz
