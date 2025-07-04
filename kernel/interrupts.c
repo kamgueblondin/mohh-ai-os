@@ -4,6 +4,7 @@
 #include "kernel/timer.h" // Pour timer_tick
 #include "kernel/libc.h" // Pour itoa
 #include <stdint.h>
+#include "kernel/debug_vga.h" // Pour debug_putc_at
 
 // Fonctions/variables globales pour l'affichage (de kernel.c ou vga.c)
 extern void print_string(const char* str, char color); // Assurez-vous que cette fonction est définie ailleurs si utilisée.
@@ -193,21 +194,33 @@ void fault_handler(void* esp_at_call) {
 
 // Gestionnaire C pour les IRQs (32-47), sauf clavier (IRQ1)
 // Appelé par irq_common_stub depuis isr_stubs.s
+
+static char irq0_debug_indicator = '+';
+
 void irq_handler_c(void* esp_at_call) {
     uint32_t* stack = (uint32_t*)esp_at_call;
     uint32_t int_num = stack[10]; // Même logique d'offset que pour fault_handler
 
-    if (int_num == 32) { // IRQ0 (Timer)
+    if (int_num == 32) { // IRQ0 (Timer) - Mappé à INT 32
+        // Débogage très simple pour voir si IRQ0 est atteint par le handler C
+        debug_putc_at(irq0_debug_indicator, 77, 0, 0x0B); // Cyan sur Noir, position (x=77, y=0)
+        if (irq0_debug_indicator == '+') irq0_debug_indicator = '*';
+        else irq0_debug_indicator = '+';
+
         timer_handler(); // Appeler le gestionnaire principal du timer
     }
     // D'autres IRQs pourraient être gérés ici si nécessaire.
-    // Le clavier (IRQ1/INT33) a son propre stub qui appelle keyboard_handler_main.
+    // Le clavier (IRQ1/INT33) a son propre stub qui appelle keyboard_handler_main directement.
 
     // Envoyer EOI (End Of Interrupt - Fin d'Interruption)
-    if (int_num >= 40) { // IRQ 8-15 (remappé à 40-47) vient du PIC esclave
-        outb(PIC2_COMMAND, PIC_EOI); // Envoyer EOI au PIC esclave
+    // Important : Ne pas envoyer d'EOI pour une IRQ qui n'a pas été gérée ou qui n'est pas attendue.
+    // L'EOI est envoyé au PIC qui a généré l'interruption.
+    if (int_num >= 32 && int_num <= 47) { // S'assurer que c'est une IRQ gérée par le PIC
+        if (int_num >= 40) { // IRQ 8-15 (remappé à INT 40-47) vient du PIC esclave
+            outb(PIC2_COMMAND, PIC_EOI); // Envoyer EOI au PIC esclave
+        }
+        outb(PIC1_COMMAND, PIC_EOI); // Toujours envoyer EOI au PIC maître (même pour les IRQs esclaves)
     }
-    outb(PIC1_COMMAND, PIC_EOI); // Toujours envoyer EOI au PIC maître
 }
 
 // Initialise le PIC et configure les entrées IDT pour les ISRs et IRQs.
