@@ -198,10 +198,41 @@ void fault_handler(void* esp_at_call) {
 static char irq0_debug_indicator = '+';
 
 void irq_handler_c(void* esp_at_call) {
-    uint32_t* stack = (uint32_t*)esp_at_call;
-    uint32_t int_num = stack[10]; // Même logique d'offset que pour fault_handler
+    // Confirmer l'entrée dans la fonction C
+    debug_putc_at('C', 75, 0, 0x0E); // 'C' pour C-handler, Jaune sur Noir, position (x=75, y=0)
 
-    if (int_num == 32) { // IRQ0 (Timer) - Mappé à INT 32
+    uint32_t* stack = (uint32_t*)esp_at_call;
+    // L'index 10 pour int_num est basé sur la structure poussée par les macros IRQ/ISR dans isr_stubs.s:
+    // PUSH byte 0 (dummy error code)
+    // PUSH byte %2 (interrupt number for IRQ, ou %1 pour ISR)
+    // Puis jmp vers common_stub qui fait PUSHA, puis PUSH AX (original DS)
+    // esp_at_call dans le C est l'ESP *après* PUSH AX (original DS) dans le common_stub.
+    // Donc, stack[0] = original DS
+    // stack[1] = EDI (de PUSHA)
+    // ...
+    // stack[8] = EAX (de PUSHA)
+    // stack[9] = interrupt_number (poussé par la macro IRQ/ISR)
+    // stack[10] = dummy_error_code (poussé par la macro IRQ/ISR)
+    // CELA SIGNIFIE QUE int_num DEVRAIT ÊTRE À stack[9] et non stack[10].
+    // Je vais corriger cela et afficher les deux.
+
+    uint32_t int_num_val_at_10 = stack[10]; // Ce que nous utilisions (probablement le dummy error code)
+    uint32_t int_num_val_at_9 = stack[9];   // Ce qui devrait être le numéro d'interruption
+
+    // Afficher int_num_val_at_9 (supposé correct)
+    char tens_9 = ((int_num_val_at_9 / 10) % 10) + '0';
+    char units_9 = (int_num_val_at_9 % 10) + '0';
+    debug_putc_at(tens_9, 73, 0, 0x0F);  // Dizaines à (73,0) - Blanc sur Noir
+    debug_putc_at(units_9, 74, 0, 0x0F); // Unités à (74,0) - Blanc sur Noir
+
+    // Pour le débogage, affichons aussi ce qui est à stack[10] à une autre position
+    char tens_10 = ((int_num_val_at_10 / 10) % 10) + '0';
+    char units_10 = (int_num_val_at_10 % 10) + '0';
+    debug_putc_at(tens_10, 71, 0, 0x0C); // Dizaines (de stack[10]) à (71,0) - Rouge sur Noir
+    debug_putc_at(units_10, 72, 0, 0x0C); // Unités (de stack[10]) à (72,0) - Rouge sur Noir
+
+
+    if (int_num_val_at_9 == 32) { // IRQ0 (Timer) - Mappé à INT 32. Utiliser la valeur corrigée.
         // Débogage très simple pour voir si IRQ0 est atteint par le handler C
         debug_putc_at(irq0_debug_indicator, 77, 0, 0x0B); // Cyan sur Noir, position (x=77, y=0)
         if (irq0_debug_indicator == '+') irq0_debug_indicator = '*';
