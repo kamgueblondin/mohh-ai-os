@@ -161,7 +161,9 @@ void kmain(uint32_t physical_pd_addr) {
     */
 
     // Initialiser et démarrer le timer système pour permettre le préemption (scheduling)
+    print_string("AVANT TIMER_INIT\n", current_color);
     timer_init(100); // Configurer le timer pour une fréquence de 100 Hz
+    print_string("APRES TIMER_INIT\n", current_color);
     print_string("Timer systeme active a 100Hz.\n", current_color);
 
     // Activer les interruptions globalement (si ce n'est pas déjà fait dans timer_init ou interrupts_init)
