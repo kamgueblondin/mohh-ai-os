@@ -70,19 +70,41 @@ task_t* create_task(void (*entry_point)()) {
     new_task->parent = NULL;
     new_task->child_pid_waiting_on = 0;
 
-    new_task->cpu_state.eflags = 0x202;
+    // Préparer la pile pour la première commutation via context_switch
+    uint32_t* kstack = (uint32_t*)((uintptr_t)task_stack + KERNEL_TASK_STACK_SIZE);
+
+    // Trame pour iret (commutation noyau vers noyau)
+    // iret dépile EIP, CS, EFLAGS. SS:ESP ne sont pas touchés si CPL identique.
+    *(--kstack) = 0x00000202;      // EFLAGS (IF=1, bit 1 toujours à 1)
+    *(--kstack) = 0x08;            // Sélecteur de Code Noyau (Kernel Code Segment)
+    *(--kstack) = (uint32_t)(uintptr_t)entry_point; // EIP de la fonction entry_point
+
+    // Trame pour popfd (restaure EFLAGS avant iret)
+    // Doit être la même valeur que celle pour iret pour la cohérence.
+    *(--kstack) = 0x00000202;      // EFLAGS (IF=1)
+
+    // Trame pour popad (restaure les registres généraux)
+    // Ordre de popad: EDI, ESI, EBP, ESP_dummy, EBX, EDX, ECX, EAX
+    // Donc, nous poussons dans l'ordre inverse: EAX, ECX, ..., EDI
+    *(--kstack) = 0; // EAX
+    *(--kstack) = 0; // ECX
+    *(--kstack) = 0; // EDX
+    *(--kstack) = 0; // EBX
+    *(--kstack) = 0; // ESP_dummy (valeur de la pile avant PUSHAD, non utilisée par POPAD)
+    *(--kstack) = 0; // EBP (initialisé à 0 pour une nouvelle tâche C)
+    *(--kstack) = 0; // ESI
+    *(--kstack) = 0; // EDI
+
+    // Le pointeur de pile de la nouvelle tâche doit pointer vers EDI sur la pile préparée.
+    new_task->cpu_state.esp = (uint32_t)(uintptr_t)kstack;
+
+    // Les champs eip et eflags dans cpu_state_t sont moins critiques pour le premier lancement
+    // car iret et popfd les prennent de la pile, mais les initialiser est bien pour la cohérence.
     new_task->cpu_state.eip = (uint32_t)(uintptr_t)entry_point;
-
-    uint32_t stack_top = (uint32_t)(uintptr_t)task_stack + KERNEL_TASK_STACK_SIZE;
-    new_task->cpu_state.esp = stack_top;
-    new_task->cpu_state.ebp = 0;
-
-    new_task->cpu_state.eax = 0;
-    new_task->cpu_state.ebx = 0;
-    new_task->cpu_state.ecx = 0;
-    new_task->cpu_state.edx = 0;
-    new_task->cpu_state.esi = 0;
-    new_task->cpu_state.edi = 0;
+    new_task->cpu_state.eflags = 0x00000202;
+    new_task->cpu_state.ebp = 0; // Cohérence avec la pile.
+    // Les autres registres généraux (eax, ebx, etc.) sont déjà à 0 par le memset de la TCB
+    // et seront restaurés à 0 par le popad depuis la pile.
 
     if (task_queue_head == NULL) {
         task_queue_head = new_task;
@@ -232,16 +254,17 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
     return new_task->id;
 }
 
+
 static char schedule_debug_char_val = '0';
 
 void schedule() {
-    debug_putc_at(schedule_debug_char_val, 78, 0, 0x0E); // Jaune sur Noir, (x=78, y=0)
+    debug_putc_at(schedule_debug_char_val, 78, 0, 0x0E);
     schedule_debug_char_val++;
     if (schedule_debug_char_val > '9') schedule_debug_char_val = '0';
 
     if (!current_task) {
         debug_putc_at('S', 0, 1, 0x0C); debug_putc_at('C', 1, 1, 0x0C); debug_putc_at('H', 2, 1, 0x0C);
-        debug_putc_at('N', 4, 1, 0x0C); debug_putc_at('C', 5, 1, 0x0C); debug_putc_at('T', 6, 1, 0x0C); // Sched NoCurTask
+        debug_putc_at('N', 4, 1, 0x0C); debug_putc_at('C', 5, 1, 0x0C); debug_putc_at('T', 6, 1, 0x0C);
         return;
     }
 
@@ -284,7 +307,6 @@ void schedule() {
         return;
     }
 
-    // Debug: Afficher l'ID de la tâche vers laquelle on commute.
     // print_string(" Switching to PID: ", current_color);
     // char pid_str[12];
     // itoa(current_task->id, pid_str, 10);
@@ -297,22 +319,17 @@ void schedule() {
 // Tâche noyau worker simple pour le débogage
 static char worker_task_char = 'W';
 void kernel_worker_task_main() {
-    debug_putc_at('K', 0, 2, 0x0A); // 'K'ernel 'W'orker 'S'tarted
+    debug_putc_at('K', 0, 2, 0x0A);
     debug_putc_at('W', 1, 2, 0x0A);
     debug_putc_at('S', 2, 2, 0x0A);
 
     while(1) {
-        debug_putc_at(worker_task_char, 68, 0, 0x0A); // Vert à (68,0)
+        debug_putc_at(worker_task_char, 68, 0, 0x0A);
         if (worker_task_char == 'W') worker_task_char = 'V';
         else worker_task_char = 'W';
 
-        // Petite boucle pour ralentir l'affichage et céder potentiellement le CPU implicitement
-        // via hlt si le timer interrompt pendant ce temps.
-        // Un vrai OS utiliserait un appel système pour dormir ou attendre.
         for (volatile int i = 0; i < 5000000; ++i) {
-            // Boucle d'attente simple pour rendre le changement visible
-            // et permettre au timer d'interrompre.
+            // Boucle d'attente
         }
-        // asm volatile("hlt"); // On pourrait aussi faire hlt pour attendre la prochaine interruption timer
     }
 }
