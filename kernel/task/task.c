@@ -271,39 +271,37 @@ int create_user_process(const char* path_in_initrd, char* const argv_from_caller
 
     uint32_t* kstack = (uint32_t*)kernel_stack_top; // Pointeur vers le sommet de la pile noyau.
 
-    // Trame IRET pour passer en mode utilisateur.
-    *(--kstack) = USER_DATA_SELECTOR;      // SS_user (Sélecteur de segment de données utilisateur).
-    *(--kstack) = current_esp_user;        // ESP_user (pointeur de pile utilisateur, pointe vers argc).
-    *(--kstack) = 0x00000202;              // EFLAGS_user (IF=1 pour interruptions, bit 1=1, IOPL=0).
-    *(--kstack) = USER_CODE_SELECTOR;      // CS_user (Sélecteur de segment de code utilisateur).
-    *(--kstack) = entry_point;             // EIP_user (point d'entrée du programme ELF).
+    // Trame IRET (5 dwords)
+    *(--kstack) = USER_DATA_SELECTOR;  // SS_user
+    *(--kstack) = current_esp_user;    // ESP_user
+    *(--kstack) = 0x00000202;          // EFLAGS_user (pour iret, IF=1, bit 1 toujours à 1)
+    *(--kstack) = USER_CODE_SELECTOR;  // CS_user
+    *(--kstack) = entry_point;         // EIP_user (pour iret)
 
-    // Trame pour `popad` (registres généraux, initialisés à 0 pour une nouvelle tâche).
-    // PUSHAD pousse dans l'ordre : EDI, ESI, EBP, ESP_kernel_dummy, EBX, EDX, ECX, EAX.
-    // POPAD les restaure dans l'ordre inverse : EAX, ECX, EDX, EBX, ESP_dummy, EBP, ESI, EDI.
-    // Donc, sur la pile, avant EIP pour `iret` (qui est déjà poussé),
-    // nous devons avoir (du plus haut au plus bas sur la pile, donc poussés en dernier) :
-    // EAX, ECX, EDX, EBX, ESP_dummy, EBP, ESI, EDI.
-    // L'ESP du noyau pointera vers EAX (ou EDI si on suit l'ordre PUSHAD).
-    // Le stub `context_switch` fera `popad`, donc l'ordre sur la pile doit être correct pour `popad`.
-    *(--kstack) = 0; // EDI (pour `popad`).
-    *(--kstack) = 0; // ESI.
-    *(--kstack) = 0; // EBP.
-    *(--kstack) = 0; // ESP_dummy (valeur non utilisée par `popad` mais une place est réservée sur la pile).
-    *(--kstack) = 0; // EBX.
-    *(--kstack) = 0; // EDX.
-    *(--kstack) = 0; // ECX.
-    *(--kstack) = 0; // EAX.
+    // EFLAGS pour popfd (1 dword) - ce sont les EFLAGS du noyau avant iret.
+    // context_switch.s fait: popad, popfd, iret
+    *(--kstack) = 0x00000202;          // EFLAGS du noyau (IF=1, bit 1 toujours à 1)
 
-    // L'ESP du noyau pour la nouvelle tâche pointera ici (vers le sommet de la trame `popad`, c'est-à-dire EAX).
-    // `context_switch` fera :
-    //   mov esp, new_task->cpu_state.esp
-    //   popad  (restaure EAX..EDI depuis la pile noyau)
-    //   iret   (restaure EIP_user, CS_user, EFLAGS_user, ESP_user, SS_user depuis la pile noyau)
+    // Trame pour popad (8 dwords).
+    // POPAD dépile dans l'ordre: EDI, ESI, EBP, ESP_dummy, EBX, EDX, ECX, EAX.
+    // Pour que cela fonctionne, la pile doit contenir ces valeurs avec EDI au sommet (adresse la plus basse).
+    // Donc, nous poussons EAX en premier (adresse la plus haute de cette trame), puis ECX, ..., puis EDI en dernier (adresse la plus basse).
+    // new_task->cpu_state.esp pointera vers la valeur d'EDI sur la pile.
+    *(--kstack) = 0; // Valeur pour EAX
+    *(--kstack) = 0; // Valeur pour ECX
+    *(--kstack) = 0; // Valeur pour EDX
+    *(--kstack) = 0; // Valeur pour EBX
+    *(--kstack) = 0; // Valeur pour ESP_original_dummy (valeur de ESP avant PUSHAD, ignorée par POPAD lors du dépilement de cette position)
+    *(--kstack) = 0; // Valeur pour EBP
+    *(--kstack) = 0; // Valeur pour ESI
+    *(--kstack) = 0; // Valeur pour EDI
+
+    // new_task->cpu_state.esp doit pointer vers la valeur d'EDI sur la pile (sommet actuel de kstack).
     new_task->cpu_state.esp = (uint32_t)(uintptr_t)kstack;
 
-    // Les champs `eip` et `eflags` dans `cpu_state_t` ne sont pas directement utilisés
-    // par ce mécanisme de premier lancement car `iret` prend toutes ses informations de la pile.
+    // Les champs eip et eflags dans cpu_state_t sont redondants pour le premier lancement
+    // car iret et popfd prennent leurs valeurs de la pile.
+    // Cependant, nous les mettons à jour pour la cohérence et le débogage.
     // Nous les mettons à jour pour la cohérence ou le débogage futur.
     new_task->cpu_state.eip = entry_point;
     new_task->cpu_state.eflags = 0x00000202;
