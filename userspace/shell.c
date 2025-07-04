@@ -48,6 +48,7 @@ int is_empty(const char* str) {
 
 // Fonction principale du shell.
 void main() {
+    print("SHELL MAIN EXECUTED\n"); // Message de débogage immédiat
     print("AI-OS Shell v0.1 - Bienvenue !\n"); // Message de bienvenue.
 
     char input_buffer[256]; // Tampon pour stocker l'entrée utilisateur.

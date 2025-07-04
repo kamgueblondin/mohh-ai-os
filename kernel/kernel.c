@@ -10,6 +10,7 @@
 #include "syscall/syscall.h" // Pour syscall_init()
 #include "libc.h"            // Pour strcmp (si besoin ici, sinon implicite via d'autres .h)
 #include <stdint.h>
+#include "debug_vga.h"       // Pour debug_putc_at
 
 // Pointeur vers la mémoire vidéo VGA. L'adresse 0xB8000 est standard.
 volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
@@ -72,6 +73,14 @@ void clear_screen(char color) {
     vga_y = 0;
 }
 
+// Fonction de débogage pour écrire un caractère directement à une position VGA
+// sans affecter le curseur global (vga_x, vga_y).
+void debug_putc_at(char c, int x, int y, char color) {
+    if (x >= 0 && x < 80 && y >= 0 && y < 25) {
+        vga_buffer[y * 80 + x] = (unsigned short)c | (unsigned short)color << 8;
+    }
+}
+
 // La fonction principale de notre noyau
 // physical_pd_addr est l'adresse physique de boot_page_directory depuis boot.s
 void kmain(uint32_t physical_pd_addr) {
@@ -126,8 +135,10 @@ void kmain(uint32_t physical_pd_addr) {
         while(1) asm volatile("cli; hlt"); // Arrêter le système
     } else {
         print_string("shell.bin lance avec PID: ", current_color);
-        print_hex((uint32_t)shell_pid, current_color); // Affichage temporaire en héxadécimal
-        print_string("\n", current_color);
+        char pid_str[12];
+        itoa(shell_pid, pid_str, 10);
+        print_string(pid_str, current_color);
+        print_string(" (DEBUG KMAIN)\n", current_color);
     }
 
     // Initialiser et démarrer le timer système pour permettre le préemption (scheduling)
