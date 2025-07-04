@@ -2,9 +2,9 @@
 #include "interrupts.h"
 #include "task/task.h"
 #include <stdint.h>
+#include "kernel/debug_vga.h" // For debug_putc_at
 
-// For direct VGA buffer access for debugging
-extern volatile unsigned short* vga_buffer;
+// extern volatile unsigned short* vga_buffer; // No longer needed
 
 #define PIT_BASE_FREQUENCY 1193182
 
@@ -13,22 +13,15 @@ extern volatile unsigned short* vga_buffer;
 
 // Debug counter for timer ticks
 static uint32_t timer_tick_debug_counter = 0;
-static char timer_debug_char = 'A';
+static char timer_debug_char_val = 'A'; // Renamed to avoid conflict if timer_debug_char was a global
 
 void timer_handler() {
     // Debug: Display a changing character in the top-right corner
-    // This is a very raw way to show timer is ticking, avoid complex print functions in ISR
-    if (vga_buffer) { // Check if vga_buffer is valid (it should be by the time timer runs)
-        // Display a single character that changes, e.g., at position (0, 79)
-        // Or a counter that increments and wraps around
-        timer_tick_debug_counter++;
-        unsigned short val_to_write;
-        if ((timer_tick_debug_counter % 100) == 0) { // Update less frequently to be visible
-            val_to_write = (unsigned short)(timer_debug_char) | (0x0F << 8); // White on Black
-            vga_buffer[0 * 80 + 79] = val_to_write;
-            timer_debug_char++;
-            if (timer_debug_char > 'Z') timer_debug_char = 'A';
-        }
+    timer_tick_debug_counter++;
+    if ((timer_tick_debug_counter % 100) == 0) { // Update less frequently to be visible
+        debug_putc_at(timer_debug_char_val, 79, 0, 0x0F); // White on Black, (x=79, y=0)
+        timer_debug_char_val++;
+        if (timer_debug_char_val > 'Z') timer_debug_char_val = 'A';
     }
     schedule();
 }

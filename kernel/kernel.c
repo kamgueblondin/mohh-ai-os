@@ -10,6 +10,7 @@
 #include "syscall/syscall.h" // Pour syscall_init()
 #include "libc.h"            // Pour strcmp (si besoin ici, sinon implicite via d'autres .h)
 #include <stdint.h>
+#include "debug_vga.h"       // Pour debug_putc_at
 
 // Pointeur vers la mémoire vidéo VGA. L'adresse 0xB8000 est standard.
 volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
@@ -70,6 +71,14 @@ void clear_screen(char color) {
     }
     vga_x = 0; // Réinitialiser la position du curseur
     vga_y = 0;
+}
+
+// Fonction de débogage pour écrire un caractère directement à une position VGA
+// sans affecter le curseur global (vga_x, vga_y).
+void debug_putc_at(char c, int x, int y, char color) {
+    if (x >= 0 && x < 80 && y >= 0 && y < 25) {
+        vga_buffer[y * 80 + x] = (unsigned short)c | (unsigned short)color << 8;
+    }
 }
 
 // La fonction principale de notre noyau
