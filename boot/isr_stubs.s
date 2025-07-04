@@ -60,6 +60,18 @@ irq_common_stub:
     mov fs, ax
     mov gs, ax
 
+    ; --- Début du code de débogage ---
+    ; Sauvegarder eax et edx temporairement s'ils sont utilisés par la suite avant popa
+    push eax
+    push edx
+    mov edx, 0xB8000   ; Adresse de base de la mémoire VGA
+    mov ah, 0x0A       ; Couleur (Vert sur Noir) pour le débogage
+    mov al, 'S'        ; Caractère 'S' (pour Stub)
+    mov [edx + (0 * 80 + 76) * 2], ax ; Écrire 'S' en (x=76, y=0)
+    pop edx
+    pop eax
+    ; --- Fin du code de débogage ---
+
     call irq_handler_c ; Call C common IRQ handler
 
     pop ebx
