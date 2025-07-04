@@ -126,7 +126,36 @@ ISR_NOERRCODE 31  ; Reserved
 ; ...
 ; IRQ 15 is Secondary ATA (int 47)
 
-IRQ 0, 32  ; Timer
+extern timer_handler_minimal_debug ; Nouvelle fonction C pour le débogage de l'IRQ0
+
+; Ancien stub IRQ0 qui utilisait irq_common_stub
+; IRQ 0, 32  ; Timer
+
+; Nouveau stub spécifique pour IRQ0
+global irq0
+irq0:
+    cli
+    pusha
+
+    ; Debug: Afficher '0' pour IRQ0 stub direct
+    push eax
+    push edx
+    mov edx, 0xB8000   ; Adresse de base de la mémoire VGA
+    mov ah, 0x0D       ; Couleur (Magenta sur Noir)
+    mov al, '0'
+    mov [edx + (0 * 80 + 70) * 2], ax ; Écrire '0' en (x=70, y=0)
+    pop edx
+    pop eax
+
+    call timer_handler_minimal_debug
+
+    mov al, 0x20    ; Commande EOI
+    out 0x20, al    ; Envoyer EOI au PIC Maître (IRQ0 est sur le maître)
+
+    popa
+    ; sti ; sti est souvent omis ici car iret restaure EFLAGS (qui inclut IF)
+    iret
+
 ; IRQ 1 (Keyboard) will have a more specific handler or call keyboard_handler directly
 global irq1
 irq1:
