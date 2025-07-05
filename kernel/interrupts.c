@@ -72,46 +72,49 @@ void pic_remap(int offset1, int offset2) {
 }
 
 void fault_handler(void* esp_at_call) {
-    uint32_t int_num_fault  = ((uint32_t*)esp_at_call)[9];
-    // uint32_t err_code_fault = ((uint32_t*)esp_at_call)[10];
+    uint32_t* stack = (uint32_t*)esp_at_call;
+    uint32_t s8, s9, s10, s11;
 
-    volatile unsigned short* vga = (unsigned short*)0xB8000;
-    char id_char = ' ';
+    // Lire prudemment les valeurs de la pile
+    // Ces indices sont basés sur l'analyse de la pile après `call fault_handler` dans `isr_common_stub`
+    // stack[0] = original ds
+    // stack[1-8] = edi, esi, ebp, esp_dummy, ebx, edx, ecx, eax (de pusha)
+    // stack[9] = interrupt_number (poussé par la macro ISR_NOERRCODE/ISR_ERRCODE)
+    // stack[10] = error_code (poussé par CPU ou macro ISR_NOERRCODE/ISR_ERRCODE)
+    // stack[11] = EIP original poussé par CPU
+    // stack[12] = CS original poussé par CPU
+    // stack[13] = EFLAGS original poussé par CPU
+    s8 = stack[8];   // EAX de pusha
+    s9 = stack[9];   // int_num
+    s10 = stack[10]; // err_code
+    s11 = stack[11]; // EIP original
 
-    for (int i = 0; i < 80 * 2; ++i) {
-        vga[i] = (unsigned short)' ' | (0x0F << 8);
-    }
-    vga_x = 0; vga_y = 0;
+    uint32_t int_num_fault = s9; // Utiliser s9 comme numéro d'interruption pour la logique suivante
 
-    if (int_num_fault == 14) {
-        id_char = 'P';
+    // Utiliser les fonctions d'affichage globales après avoir effacé l'écran.
+    // S'assurer que current_color est défini, ou utiliser une couleur fixe.
+    char fault_color = 0x0F; // Blanc sur Noir pour le débogage
+    clear_screen(fault_color); // Efface l'écran et réinitialise vga_x, vga_y
+
+    print_string("S8 (EAX):", fault_color); print_hex(s8, fault_color); print_string("\n", fault_color);
+    print_string("S9 (INT):", fault_color); print_hex(s9, fault_color); print_string("\n", fault_color);
+    print_string("S10(ERR):", fault_color); print_hex(s10, fault_color); print_string("\n", fault_color);
+    print_string("S11(EIP):", fault_color); print_hex(s11, fault_color); print_string("\n", fault_color);
+
+    if (int_num_fault == 14) { // Page Fault
         uint32_t faulting_address;
         asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
-
-        vga[0] = (unsigned short)id_char | (0x0C << 8);
-        vga[1] = (unsigned short)'F' | (0x0C << 8);
-
-        vga[80*1 + 0] = 'C'; vga[80*1 + 1] = 'R'; vga[80*1 + 2] = '2'; vga[80*1 + 3] = '='; vga[80*1 + 4] = '0'; vga[80*1 + 5] = 'x';
-        for (int i = 0; i < 8; i++) {
-            char hexdigit = (faulting_address >> ((7-i)*4)) & 0xF;
-            if (hexdigit < 10) hexdigit += '0';
-            else hexdigit += 'A' - 10;
-            vga[80*1 + 6 + i] = (unsigned short)hexdigit | (0x0C << 8);
-        }
-        // EIP display in fault_handler is complex due to stack variations, focusing on CR2 for Page Fault
-        vga[80*0 + 10] = 'E'; vga[80*0 + 11] = 'I'; vga[80*0 + 12] = 'P'; vga[80*0 + 13] = '=';
-        for (int i = 0; i < 8; i++) {
-            vga[80*0 + 14 + i] = (unsigned short)'?' | (0x0C << 8);
-        }
-    } else if (int_num_fault == 8) {
-        id_char = 'D';
-        vga[0] = (unsigned short)id_char | (0x0C << 8);
-        vga[1] = (unsigned short)'F' | (0x0C << 8);
+        print_string("Page Fault (14) at CR2: ", fault_color);
+        print_hex(faulting_address, fault_color);
+        print_string("\n", fault_color);
+    } else if (int_num_fault == 8) { // Double Fault
+        print_string("Double Fault (8)\n", fault_color);
     } else {
-        id_char = 'E';
-        vga[0] = (unsigned short)id_char | (0x0C << 8);
-        vga[1] = (unsigned short)((int_num_fault / 10) % 10 + '0') | (0x0C << 8);
-        vga[2] = (unsigned short)(int_num_fault % 10 + '0') | (0x0C << 8);
+        print_string("Exception: ", fault_color);
+        char num_str[12];
+        itoa(int_num_fault, num_str, 10);
+        print_string(num_str, fault_color);
+        print_string("\n", fault_color);
     }
     asm volatile("cli; hlt");
 }
