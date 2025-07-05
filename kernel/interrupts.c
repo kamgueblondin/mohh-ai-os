@@ -175,3 +175,11 @@ void interrupts_init() {
 
     asm volatile ("sti");
 }
+
+// Handler C minimal pour le test de l'INT 0
+void minimal_int0_handler_c() {
+    // Utiliser une couleur différente pour être sûr que c'est ce handler
+    debug_putc_at('0', 0, 0, 0x0C); // '0' Rouge à (0,0)
+    debug_putc_at('!', 1, 0, 0x0C); // '!' Rouge à (1,0)
+    asm volatile("cli; hlt"); // Arrêter ici pour observer
+}

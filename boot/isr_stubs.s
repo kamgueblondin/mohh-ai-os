@@ -84,7 +84,34 @@ irq_common_stub:
     iret
 
 ; ISRs for CPU exceptions
-ISR_NOERRCODE 0   ; Divide by zero
+; ISR_NOERRCODE 0   ; Divide by zero (Ancienne version)
+
+; Nouveau stub simplifié pour ISR0 (Divide by Zero)
+extern minimal_int0_handler_c
+global isr0
+isr0:
+    cli
+    ; Le CPU a déjà poussé EFLAGS, CS, EIP.
+    ; Pas de code d'erreur pour l'INT 0.
+    ; Nous n'allons pas pousser de numéro d'interruption ou de dummy error code pour ce test.
+
+    ; Sauvegarder les registres caller-saved que minimal_int0_handler_c pourrait utiliser (EAX, ECX, EDX)
+    push eax
+    push ecx
+    push edx
+
+    call minimal_int0_handler_c ; Appeler directement le handler C minimal
+
+    pop edx
+    pop ecx
+    pop eax
+
+    ; Normalement, on ne ferait pas 'add esp, X' ici car le CPU n'a pas poussé d'error code.
+    ; Et nous n'avons pas poussé de numéro d'interruption.
+    ; iret va dépiler EIP, CS, EFLAGS.
+    iret
+
+
 ISR_NOERRCODE 1   ; Debug
 ISR_NOERRCODE 2   ; Non Maskable Interrupt
 ISR_NOERRCODE 3   ; Breakpoint
