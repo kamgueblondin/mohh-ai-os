@@ -186,40 +186,32 @@ void minimal_int0_handler_c() {
 
 void debug_stub_callee_test(void* esp_at_call) {
     uint32_t* stack = (uint32_t*)esp_at_call;
-    uint32_t s9_int_num = 0;
-    uint32_t s10_err_code = 0;
+    char fault_color = 0x0F; // Blanc sur Noir
 
-    // Accès prudent à la pile, en supposant que esp_at_call est valide.
-    // stack[9] devrait être le numéro d'interruption.
-    // stack[10] devrait être le code d'erreur (ou dummy).
-    s9_int_num = stack[9];
-    s10_err_code = stack[10];
+    clear_screen(fault_color); // Efface l'écran et réinitialise vga_x, vga_y
 
-    // Effacer une petite zone pour être sûr de voir nos caractères
-    // Utiliser une couleur de fond différente pour distinguer de minimal_int0_handler_c
-    for(int y_clear = 0; y_clear < 2; ++y_clear) { // Effacer les 2 premières lignes
-        for(int x_clear = 0; x_clear < 15; ++x_clear) {
-             debug_putc_at(' ', x_clear, y_clear, 0x1F); // Espace blanc sur fond bleu
-        }
+    print_string("Debug Stub Callee Test\n", fault_color);
+    print_string("----------------------\n", fault_color);
+    print_string("Stack (from esp_at_call):\n", fault_color);
+
+    char val_str[12]; // Buffer pour itoa
+
+    // Rappel des attentes (si INT 0):
+    // stack[0] = DS original
+    // stack[1-8] = EDI, ESI, EBP, ESP_dummy, EBX, EDX, ECX, EAX (de pusha)
+    // stack[9] = 0 (numéro d'interruption INT 0)
+    // stack[10] = 0 (dummy error code pour INT 0)
+    // stack[11] = EIP original (de la division par zéro)
+    // stack[12] = CS original
+    // stack[13] = EFLAGS original
+
+    for (int i = 0; i < 14 && vga_y < 24; ++i) {
+        print_string("S[", fault_color);
+        itoa(i, val_str, 10); print_string(val_str, fault_color);
+        print_string("]:0x", fault_color);
+        print_hex(stack[i], fault_color); // Affiche la valeur stack[i] en hexa
+        print_string("\n", fault_color);
     }
-
-    debug_putc_at('S', 0, 0, 0x1E); // 'S'tub (jaune sur bleu)
-    debug_putc_at('C', 1, 0, 0x1E); // 'C'allee
-    debug_putc_at('T', 2, 0, 0x1E); // 'T'est
-
-    // Afficher s9 (int_num) - devrait être 0 pour INT 0
-    char tens_s9 = ((s9_int_num / 10) % 10) + '0';
-    char units_s9 = (s9_int_num % 10) + '0';
-    debug_putc_at('I', 4, 0, 0x1F); debug_putc_at('N', 5, 0, 0x1F); debug_putc_at(':', 6, 0, 0x1F);
-    debug_putc_at(tens_s9, 7, 0, 0x1F);
-    debug_putc_at(units_s9, 8, 0, 0x1F);
-
-    // Afficher s10 (err_code) - devrait être 0 pour INT 0 (dummy)
-    char tens_s10 = ((s10_err_code / 10) % 10) + '0';
-    char units_s10 = (s10_err_code % 10) + '0';
-    debug_putc_at('E', 10, 0, 0x1C); debug_putc_at('R', 11, 0, 0x1C); debug_putc_at(':', 12, 0, 0x1C);
-    debug_putc_at(tens_s10, 13, 0, 0x1C); // Rouge sur bleu
-    debug_putc_at(units_s10, 14, 0, 0x1C);
 
     asm volatile("cli; hlt");
 }
