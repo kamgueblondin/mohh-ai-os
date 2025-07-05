@@ -38,7 +38,7 @@ isr_common_stub:
     mov fs, ax
     mov gs, ax
 
-    call fault_handler ; Call C handler
+    call debug_stub_callee_test ; Call NEW C test handler
 
     pop ebx            ; reload the original data segment descriptor
     mov ds, bx
@@ -84,32 +84,21 @@ irq_common_stub:
     iret
 
 ; ISRs for CPU exceptions
-; ISR_NOERRCODE 0   ; Divide by zero (Ancienne version)
+ISR_NOERRCODE 0   ; Divide by zero (Rétabli pour utiliser isr_common_stub)
 
-; Nouveau stub simplifié pour ISR0 (Divide by Zero)
-extern minimal_int0_handler_c
-global isr0
-isr0:
-    cli
-    ; Le CPU a déjà poussé EFLAGS, CS, EIP.
-    ; Pas de code d'erreur pour l'INT 0.
-    ; Nous n'allons pas pousser de numéro d'interruption ou de dummy error code pour ce test.
-
-    ; Sauvegarder les registres caller-saved que minimal_int0_handler_c pourrait utiliser (EAX, ECX, EDX)
-    push eax
-    push ecx
-    push edx
-
-    call minimal_int0_handler_c ; Appeler directement le handler C minimal
-
-    pop edx
-    pop ecx
-    pop eax
-
-    ; Normalement, on ne ferait pas 'add esp, X' ici car le CPU n'a pas poussé d'error code.
-    ; Et nous n'avons pas poussé de numéro d'interruption.
-    ; iret va dépiler EIP, CS, EFLAGS.
-    iret
+; Commenter l'ancien stub simplifié pour ISR0
+; extern minimal_int0_handler_c
+; global isr0
+; isr0:
+;    cli
+;    push eax
+;    push ecx
+;    push edx
+;    call minimal_int0_handler_c
+;    pop edx
+;    pop ecx
+;    pop eax
+;    iret
 
 
 ISR_NOERRCODE 1   ; Debug
@@ -228,6 +217,8 @@ IRQ 14, 46 ; Primary ATA Hard Disk
 IRQ 15, 47 ; Secondary ATA Hard Disk
 
 ; Declare C functions to be called
-extern fault_handler      ; For CPU exceptions
+; extern fault_handler      ; For CPU exceptions (remplacé temporairement)
+extern debug_stub_callee_test ; Nouvelle fonction de test pour isr_common_stub
 extern irq_handler_c      ; For common IRQs (not keyboard)
 extern keyboard_handler_main ; For keyboard (IRQ1)
+; extern minimal_int0_handler_c ; Plus utilisé directement par ISR0
