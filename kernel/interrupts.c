@@ -186,32 +186,35 @@ void minimal_int0_handler_c() {
 
 void debug_stub_callee_test(void* esp_at_call) {
     uint32_t* stack = (uint32_t*)esp_at_call;
-    char fault_color = 0x0F; // Blanc sur Noir
+    uint32_t s9_int_num;
+    uint32_t s10_err_code;
 
-    clear_screen(fault_color); // Efface l'écran et réinitialise vga_x, vga_y
+    // Lire directement les valeurs attendues de la pile
+    // stack[9] = numéro d'interruption (devrait être 0 pour INT 0)
+    // stack[10] = code d'erreur (devrait être 0 pour INT 0)
+    s9_int_num = stack[9];
+    s10_err_code = stack[10];
 
-    print_string("Debug Stub Callee Test\n", fault_color);
-    print_string("----------------------\n", fault_color);
-    print_string("Stack (from esp_at_call):\n", fault_color);
+    // Affichage minimaliste direct avec debug_putc_at
+    // Effacer une petite zone pour nos caractères
+    for (int i=0; i<10; ++i) debug_putc_at(' ', i, 0, 0x07);
 
-    char val_str[12]; // Buffer pour itoa
+    // Afficher "I:" suivi des 2 derniers chiffres hexa de s9_int_num
+    debug_putc_at('I', 0, 0, 0x0F); // Blanc sur Noir
+    debug_putc_at(':', 1, 0, 0x0F);
+    unsigned char s9_b1 = (s9_int_num >> 4) & 0x0F;
+    unsigned char s9_b0 = s9_int_num & 0x0F;
+    debug_putc_at( (s9_b1 < 10 ? s9_b1 + '0' : s9_b1 - 10 + 'A'), 2, 0, 0x0F);
+    debug_putc_at( (s9_b0 < 10 ? s9_b0 + '0' : s9_b0 - 10 + 'A'), 3, 0, 0x0F);
 
-    // Rappel des attentes (si INT 0):
-    // stack[0] = DS original
-    // stack[1-8] = EDI, ESI, EBP, ESP_dummy, EBX, EDX, ECX, EAX (de pusha)
-    // stack[9] = 0 (numéro d'interruption INT 0)
-    // stack[10] = 0 (dummy error code pour INT 0)
-    // stack[11] = EIP original (de la division par zéro)
-    // stack[12] = CS original
-    // stack[13] = EFLAGS original
-
-    for (int i = 0; i < 14 && vga_y < 24; ++i) {
-        print_string("S[", fault_color);
-        itoa(i, val_str, 10); print_string(val_str, fault_color);
-        print_string("]:0x", fault_color);
-        print_hex(stack[i], fault_color); // Affiche la valeur stack[i] en hexa
-        print_string("\n", fault_color);
-    }
+    // Afficher " E:" suivi des 2 derniers chiffres hexa de s10_err_code
+    debug_putc_at(' ', 4, 0, 0x0F);
+    debug_putc_at('E', 5, 0, 0x0C); // Rouge sur Noir
+    debug_putc_at(':', 6, 0, 0x0C);
+    unsigned char s10_b1 = (s10_err_code >> 4) & 0x0F;
+    unsigned char s10_b0 = s10_err_code & 0x0F;
+    debug_putc_at( (s10_b1 < 10 ? s10_b1 + '0' : s10_b1 - 10 + 'A'), 7, 0, 0x0C);
+    debug_putc_at( (s10_b0 < 10 ? s10_b0 + '0' : s10_b0 - 10 + 'A'), 8, 0, 0x0C);
 
     asm volatile("cli; hlt");
 }
