@@ -75,12 +75,6 @@ void debug_putc_at(char c, int x, int y, char color) {
 }
 
 void kmain(uint32_t physical_pd_addr) {
-    // TEST: Forcer une division par zéro pour vérifier fault_handler
-    volatile int test_x = 5;
-    volatile int test_y = 0;
-    volatile int test_z = test_x / test_y;
-    (void)test_z; // Pour éviter l'avertissement "unused variable"
-
     current_color = 0x1F;
     clear_screen(current_color);
 
@@ -111,6 +105,13 @@ void kmain(uint32_t physical_pd_addr) {
     interrupts_init();
     syscall_init();
     print_string("IDT, PIC et Appels Systeme initialises.\n", current_color);
+
+    // TEST: Forcer une division par zéro pour vérifier fault_handler APRÈS init des interruptions
+    volatile int test_x = 5;
+    volatile int test_y = 0;
+    volatile int test_z = test_x / test_y;
+    (void)test_z; // Pour éviter l'avertissement "unused variable"
+
 
     tasking_init();
     print_string("Multitache initialise.\n", current_color);
